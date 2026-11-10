@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState, type ChangeEvent, type FormEvent } from 'react'
+import { useEffect, useMemo, useState, type ChangeEvent, type FormEvent, type ReactNode } from 'react'
 
 type Status = 'pending' | 'approved' | 'changes' | 'draft'
 type Page = 'dashboard' | 'new' | 'details' | 'review' | 'approvals' | 'activity' | 'settings'
@@ -42,7 +42,7 @@ function initialOrders(): Order[] {
 
 type IconName = 'grid' | 'plus' | 'check' | 'history' | 'settings' | 'bell' | 'search' | 'upload' | 'arrow' | 'up' | 'menu' | 'close' | 'link' | 'file' | 'clock'
 function Icon({ name, size = 22 }: { name: IconName; size?: number }) {
-  const paths: Record<IconName, React.ReactNode> = {
+  const paths: Record<IconName, ReactNode> = {
     grid: <><rect x="3" y="3" width="7" height="7" rx="1" /><rect x="14" y="3" width="7" height="7" rx="1" /><rect x="3" y="14" width="7" height="7" rx="1" /><rect x="14" y="14" width="7" height="7" rx="1" /></>,
     plus: <path d="M12 4v16M4 12h16" />,
     check: <path d="m4 12 5 5L20 6" />,
