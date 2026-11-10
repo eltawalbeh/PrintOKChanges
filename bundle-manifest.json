@@ -1,0 +1,55 @@
+{
+  "bundle": "PrintOK Design-to-Code / Frontend",
+  "created": "2026-11-10",
+  "sourceRepository": "eltawalbeh/PrintOK",
+  "deliveryRepository": "eltawalbeh/PrintOKChanges",
+  "originalSourceEdited": false,
+  "figma": {
+    "fileKey": "n6Vv2dTAInthPQ9MEJwh42",
+    "pageNode": "19:2",
+    "screens": [
+      "19:41",
+      "19:122",
+      "19:178",
+      "19:236"
+    ]
+  },
+  "files": [
+    {
+      "path": "src/App.tsx",
+      "operation": "replace",
+      "description": "Interactive React application, order workflows, review and version decisions"
+    },
+    {
+      "path": "src/index.css",
+      "operation": "replace",
+      "description": "Responsive Arabic RTL visual design, forms, customer mobile layout"
+    }
+  ],
+  "metadataFiles": [
+    "README.md",
+    "bundle-manifest.json"
+  ],
+  "runtime": "React 19 / Vite 8 / TypeScript / Tailwind CSS 4",
+  "backend": "none",
+  "dataPersistence": "browser localStorage demo only",
+  "reviewLinks": "not secure or cross-device until backend is implemented",
+  "verification": {
+    "automatedBundleIntegrityChecks": {
+      "appChars": 26168,
+      "cssChars": 19265,
+      "appHasFigmaUrl": false,
+      "cssHasFigmaUrl": false,
+      "hasPages": true,
+      "hasLocalStorage": true,
+      "hasVersionReset": true,
+      "hasUploadFile": true,
+      "hasAccessibleRTL": true,
+      "cssHasMobile": true,
+      "cssUsesBrandColors": true,
+      "hasEs2022At": false
+    },
+    "localBuildExecuted": false,
+    "visualBrowserComparisonExecuted": false
+  }
+}
