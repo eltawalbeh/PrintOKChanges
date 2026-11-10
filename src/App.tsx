@@ -144,7 +144,7 @@ export default function App() {
   const uploadVersion = (event: ChangeEvent<HTMLInputElement>) => {
     if (!active || !event.target.files?.[0]) return
     const file = event.target.files[0]
-    const version: Version = { number: (active.versions.at(-1)?.number || 0) + 1, status: 'pending', date: new Date().toISOString(), fileName: file.name, note: 'نسخة جديدة تنتظر الموافقة' }
+    const version: Version = { number: (active.versions[active.versions.length - 1]?.number || 0) + 1, status: 'pending', date: new Date().toISOString(), fileName: file.name, note: 'نسخة جديدة تنتظر الموافقة' }
     setOrders(prev => prev.map(order => order.id === active.id ? { ...order, versions: [...order.versions, version] } : order))
     event.target.value = ''
     setToast('تم تسجيل النسخة الجديدة؛ الموافقات السابقة لا تنطبق عليها')
