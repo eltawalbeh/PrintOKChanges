@@ -1,0 +1,31 @@
+name: Build PrintOK Neon API
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'backend/**'
+      - '.github/workflows/build-printok-api.yml'
+  workflow_dispatch:
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+      - name: Install and bundle
+        working-directory: backend
+        run: |
+          npm install --no-audit --no-fund
+          npm run build
+          node --check dist/index.mjs
+          cd dist
+          zip -9 -j ../printokapi.zip index.mjs
+      - uses: actions/upload-artifact@v4
+        with:
+          name: printok-neon-function
+          path: backend/printokapi.zip
+          if-no-files-found: error
