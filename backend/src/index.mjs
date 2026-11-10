@@ -80,7 +80,7 @@ async function saveFile(file, orderId, versionNumber) {
   }
   const extension = pdf ? 'pdf' : png ? 'png' : 'jpg';
   const key = 'orders/' + orderId + '/v' + versionNumber + '/' + randomUUID() + '.' + extension;
-  await s3.send(new PutObjectCommand({ Bucket: BUCKET, Key: key, Body: bytes, ContentType: file.type, ContentDisposition: 'attachment', CacheControl: 'private, max-age=0' }));
+  await s3.send(new PutObjectCommand({ Bucket: BUCKET, Key: key, Body: bytes, ContentType: file.type, ContentDisposition: 'inline', CacheControl: 'private, max-age=0' }));
   return { key, name: clean(file.name, 255), type: file.type, size: file.size };
 }
 async function deleteFile(key) { try { await s3.send(new DeleteObjectCommand({ Bucket: BUCKET, Key: key })); } catch (err) { console.error('Orphan file cleanup failed:', err.message); } }
