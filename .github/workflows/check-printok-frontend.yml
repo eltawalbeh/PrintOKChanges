@@ -42,3 +42,14 @@ jobs:
         run: npx tsc --noEmit
       - name: Production build
         run: npx vite build
+
+      - name: Check deployed Neon health
+        run: |
+          curl --fail --silent --show-error --retry 4 --retry-delay 3 \
+            "https://br-cold-wind-baoi51hy-printokapi.compute.c-8.eu-central-1.aws.neon.tech/health" > health.json
+          node -e "const h=require('./health.json');if(h.ok!==true||h.database!=='connected')process.exit(1);console.log('Neon API and PostgreSQL ready')"
+      - name: Confirm unauthenticated orders are denied
+        run: |
+          CODE=$(curl --silent --output /dev/null --write-out '%{http_code}' \
+            "https://br-cold-wind-baoi51hy-printokapi.compute.c-8.eu-central-1.aws.neon.tech/orders")
+          test "$CODE" = "401"
