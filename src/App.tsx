@@ -422,20 +422,34 @@ export default function App() {
       <div className="workspace-top"><button className="mobile-menu-btn" onClick={() => setMobileNav(true)} aria-label="فتح القائمة"><Icon name="menu" /></button><button className="notifications" onClick={() => setToast('لا توجد إشعارات جديدة')}><Icon name="bell" size={20} /><span>الإشعارات</span></button></div>
       {error && <div className="inline-error" role="alert">{error}<button onClick={() => refresh(session).catch(() => {})}>إعادة المحاولة</button></div>}
       {(page === 'dashboard' || page === 'approvals') && <>
-        <header className="page-heading"><div><h1>{page === 'approvals' ? 'الموافقات' : 'لوحة الطلبات'}</h1><p>{page === 'approvals' ? 'النسخ التي تنتظر موافقة العميل' : 'تابع ملفات التصاميم وموافقات العملاء من مكان واحد'}</p></div><button className="btn btn-primary new-action" onClick={() => navigate('new')}><Icon name="plus" size={23} />طلب طباعة جديد</button></header>
+        <header className="page-heading"><div><h1>{page==='approvals'?'الموافقات':'لوحة الطلبات'}</h1><p>{page==='approvals'?'النسخ التي تنتظر موافقة العميل':'تابع ملفات التصاميم وموافقات العملاء من مكان واحد'}</p></div>
+          <div className="page-heading-actions"><button className="btn btn-outline refresh-action" onClick={() => refresh(session).catch(()=>{})} disabled={loading} title="تحديث الطلبات"><Icon name="refresh" size={18}/>تحديث</button><button className="btn btn-primary new-action" onClick={() => navigate('new')}><Icon name="plus" size={23}/>طلب طباعة جديد</button></div>
+        </header>
         <div className="stats-grid">
-          <div className="card stat-card"><div>جميع الطلبات</div><strong>{stats.all.toString().padStart(2, '0')}</strong><small><Icon name="up" size={13} />الطلبات المسجلة</small></div>
-          <div className="card stat-card"><div>بانتظار الموافقة</div><strong>{stats.pending.toString().padStart(2, '0')}</strong><small>تحتاج متابعة العميل</small></div>
-          <div className="card stat-card"><div>جاهزة للإنتاج</div><strong>{stats.approved.toString().padStart(2, '0')}</strong><small>تم اعتماد التصميم</small></div>
+          <div className="card stat-card"><div>جميع الطلبات</div><strong>{stats.all.toString().padStart(2,'0')}</strong><small><Icon name="up" size={13}/>الطلبات المسجلة</small></div>
+          <div className="card stat-card"><div>بانتظار الموافقة</div><strong>{stats.pending.toString().padStart(2,'0')}</strong><small>تحتاج متابعة العميل</small></div>
+          <div className="card stat-card"><div>جاهزة للإنتاج</div><strong>{stats.approved.toString().padStart(2,'0')}</strong><small>تم اعتماد التصميم</small></div>
         </div>
-        <section className="card orders-card"><div className="section-heading"><h2>{page === 'approvals' ? 'الموافقات المعلقة' : 'الطلبات الأخيرة'}</h2><p>تفاصيل الطلب وحالة آخر نسخة</p></div>
-          <div className="table-toolbar"><div className="toolbar-filters">
-            <label className="select-wrap"><span className="sr-only">الفترة</span><select value={period} onChange={e => setPeriod(e.target.value as '30' | 'all')}><option value="all">كل الفترات</option><option value="30">آخر 30 يوم</option></select></label>
-            <label className="select-wrap"><span className="sr-only">حالة الطلب</span><select value={filter} onChange={e => setFilter(e.target.value as 'all' | Status)}><option value="all">كل الحالات</option><option value="pending">بانتظار الموافقة</option><option value="approved">معتمد</option><option value="changes">تعديل مطلوب</option><option value="draft">مسودة</option></select></label>
-          </div><label className="search-box"><Icon name="search" size={20} /><input value={search} onChange={e => setSearch(e.target.value)} placeholder="بحث باسم العميل أو رقم الطلب" aria-label="البحث" /></label></div>
-          {loading ? <Busy /> : <div className="table-scroll"><table className="orders-table"><thead><tr><th>رقم الطلب</th><th>العميل</th><th>النوع</th><th>الإصدار</th><th>الحالة</th></tr></thead><tbody>
-            {filtered.map(order => <tr key={order.id} onClick={() => openOrder(order.id)}><td><button className="order-link" dir="ltr" onClick={e => { e.stopPropagation(); openOrder(order.id) }}>#{order.ref}</button></td><td>{order.client}</td><td>{order.product}</td><td className="muted" dir="ltr">{order.currentVersion ? 'V' + order.currentVersion : '—'}</td><td><StatusBadge status={order.status} /></td></tr>)}
-          </tbody></table>{!filtered.length && <div className="empty-state">لا توجد طلبات مطابقة حالياً. ابدأ بإضافة أول طلب طباعة.</div>}</div>}
+        <section className="card orders-card">
+          <div className="section-heading"><h2>{page==='approvals'?'الموافقات المعلقة':'الطلبات الأخيرة'}</h2><p>تفاصيل الطلب وحالة آخر نسخة</p></div>
+          <div className="orders-status-strip"><span className={'live-indicator'+(refreshing?' live-syncing':'')}><span/>تحديث تلقائي كل 10 ثوانٍ</span>{syncedAt && <span>آخر مزامنة {syncedAt.toLocaleTimeString('ar-JO',{hour:'2-digit',minute:'2-digit'})}</span>}</div>
+          <div className="table-toolbar enhanced-toolbar">
+            <div className="toolbar-filters">
+              {page!=='approvals'&&<label className="filter-field"><Icon name="filter" size={18}/><span>الحالة</span><select value={filter} aria-label="تصفية حسب حالة الطلب" onChange={e=>{setFilter(e.target.value as 'all'|Status);setPageIndex(1);}}>
+                <option value="all">كل الحالات</option><option value="pending">بانتظار الموافقة</option><option value="approved">معتمد</option><option value="changes">تعديل مطلوب</option><option value="draft">مسودة</option></select><Icon name="chevron" size={15}/></label>}
+              <label className="filter-field"><Icon name="calendar" size={18}/><span>الفترة</span><select value={period} aria-label="تصفية حسب الفترة" onChange={e=>{setPeriod(e.target.value as typeof period);setPageIndex(1);}}>
+                <option value="all">كل الفترات</option><option value="7">آخر 7 أيام</option><option value="30">آخر 30 يوماً</option><option value="90">آخر 90 يوماً</option><option value="365">آخر سنة</option></select><Icon name="chevron" size={15}/></label>
+              <label className="filter-field"><Icon name="arrow" size={18}/><span>الترتيب</span><select value={sort} aria-label="ترتيب الطلبات" onChange={e=>{setSort(e.target.value as 'newest'|'oldest');setPageIndex(1);}}>
+                <option value="newest">الأحدث أولاً</option><option value="oldest">الأقدم أولاً</option></select><Icon name="chevron" size={15}/></label>
+              {(filter!=='all'||period!=='all'||sort!=='newest'||search) && <button className="clear-filters" onClick={()=>{setFilter('all');setPeriod('all');setSort('newest');setSearch('');setPageIndex(1);}}><Icon name="close" size={15}/>إزالة الفلاتر</button>}
+            </div>
+            <label className="search-box"><Icon name="search" size={20}/><input value={search} onChange={e=>{setSearch(e.target.value);setPageIndex(1);}} placeholder="الاسم، رقم الطلب، رقم الهاتف، المنتج" aria-label="البحث برقم الطلب أو الهاتف أو اسم العميل أو المنتج"/>{search && <button type="button" aria-label="مسح البحث" onClick={()=>{setSearch('');setPageIndex(1);}}><Icon name="close" size={15}/></button>}</label>
+          </div>
+          <p className="results-count" role="status">{total} نتيجة مطابقة{refreshing?' · جاري التحديث...':''}</p>
+          {loading ? <Busy/> : <div className="table-scroll"><table className="orders-table"><thead><tr><th>رقم الطلب</th><th>العميل</th><th>النوع</th><th>الإصدار</th><th>الحالة</th></tr></thead><tbody>
+            {filtered.map(order=><tr key={order.id} onClick={()=>openOrder(order.id)}><td><button className="order-link" dir="ltr" onClick={e=>{e.stopPropagation();openOrder(order.id);}}>#{order.ref}</button></td><td>{order.client}<span className="order-phone">{order.phone}</span></td><td>{order.product}</td><td className="muted" dir="ltr">{order.currentVersion?'V'+order.currentVersion:'—'}</td><td><StatusBadge status={order.status}/></td></tr>)}
+          </tbody></table>{!filtered.length&&<div className="empty-state">{search||filter!=='all'||period!=='all'?'لا توجد طلبات مطابقة. جرّب تعديل خيارات البحث أو الفلاتر.':'لا توجد طلبات بعد. ابدأ بإضافة طلب طباعة جديد.'}</div>}</div>}
+          {total>50&&<div className="pagination-controls"><button className="btn btn-outline" type="button" disabled={pageIndex<=1} onClick={()=>setPageIndex(p=>Math.max(1,p-1))}>السابق</button><span>صفحة {pageIndex} من {Math.ceil(total/50)}</span><button className="btn btn-outline" type="button" disabled={pageIndex>=Math.ceil(total/50)} onClick={()=>setPageIndex(p=>p+1)}>التالي</button></div>}
         </section>
       </>}
       {page === 'new' && <><header className="page-heading"><div><h1>طلب طباعة جديد</h1><p>عبّئ التفاصيل وارفع ملف البروفا قبل إرساله للعميل</p></div></header>
