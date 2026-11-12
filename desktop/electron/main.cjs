@@ -240,7 +240,8 @@ function ipc() {
   }))
   ipcMain.handle('data:load',allow(async()=>{
     const db=await readData()
-    return {...db,root:config.root,version:app.getVersion()}
+    const clientDirectories={};for(const o of db.orders) clientDirectories[normalPhone(o.phone)]=db.clientFolders[keyFor(o.phone)]||null
+    return {...db,clientDirectories,root:config.root,version:app.getVersion()}
   }))
   ipcMain.handle('file:choose',allow(async()=>{
     const r=await dialog.showOpenDialog(win,{title:'اختر ملف طباعة',properties:['openFile'],filters:[{name:'PDF and images',extensions:['pdf','png','jpg','jpeg']}]})
