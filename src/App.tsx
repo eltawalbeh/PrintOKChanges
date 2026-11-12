@@ -1,8 +1,8 @@
-import { useEffect, useMemo, useState, type ChangeEvent, type FormEvent, type ReactNode } from 'react'
+import { useEffect, useRef, useState, type ChangeEvent, type FormEvent, type ReactNode } from 'react'
 import { api, getSession, setSession, type Activity, type Order, type Review, type Status } from './api'
 
 type Page = 'dashboard' | 'new' | 'details' | 'approvals' | 'activity' | 'settings'
-type IconName = 'grid' | 'plus' | 'check' | 'history' | 'settings' | 'bell' | 'search' | 'upload' | 'arrow' | 'up' | 'menu' | 'close' | 'link' | 'file' | 'clock' | 'log-out' | 'shield' | 'eye'
+type IconName = 'grid' | 'plus' | 'check' | 'history' | 'settings' | 'bell' | 'search' | 'upload' | 'arrow' | 'up' | 'menu' | 'close' | 'link' | 'file' | 'clock' | 'log-out' | 'shield' | 'eye' | 'filter' | 'calendar' | 'chevron' | 'refresh' | 'user' | 'phone' | 'download' | 'trash'
 type FormValues = { client: string; phone: string; product: string; quantity: string; dimensions: string; material: string }
 const emptyForm: FormValues = { client: '', phone: '', product: '', quantity: '', dimensions: '', material: '' }
 const statusLabels: Record<Status, string> = { draft: 'مسودة', pending: 'بانتظار الموافقة', approved: 'معتمد', changes: 'تعديل مطلوب' }
@@ -30,7 +30,15 @@ function Icon({ name, size = 22 }: { name: IconName; size?: number }) {
     clock: <><circle cx="12" cy="12" r="9" /><path d="M12 7v5l4 2" /></>,
     'log-out': <><path d="M9 4H5v16h4M15 8l4 4-4 4M19 12H9" /></>,
     shield: <><path d="m12 2 8 4v6c0 5-3.5 8-8 10-4.5-2-8-5-8-10V6z" /><path d="m8 12 3 3 5-6" /></>,
-    eye: <><path d="M2 12s4-6 10-6 10 6 10 6-4 6-10 6S2 12 2 12z" /><circle cx="12" cy="12" r="3" /></>
+    eye: <><path d="M2 12s4-6 10-6 10 6 10 6-4 6-10 6S2 12 2 12z" /><circle cx="12" cy="12" r="3" /></>,
+    filter: <><path d="M3 5h18M6 12h12M10 19h4" /><circle cx="17" cy="5" r="2" fill="currentColor" /></>,
+    calendar: <><rect x="3" y="5" width="18" height="16" rx="2" /><path d="M7 3v5M17 3v5M3 10h18" /></>,
+    chevron: <path d="m6 9 6 6 6-6" />,
+    refresh: <><path d="M20 6v5h-5M4 18v-5h5" /><path d="M6.1 9A7 7 0 0 1 19 11M5 13a7 7 0 0 0 12.9 2" /></>,
+    user: <><circle cx="12" cy="8" r="4" /><path d="M4 21v-2a8 8 0 0 1 16 0v2" /></>,
+    phone: <path d="M5 3h4l2 5-2.5 2a15 15 0 0 0 5.5 5.5l2-2.5 5 2v4a2 2 0 0 1-2 2A17 17 0 0 1 3 5a2 2 0 0 1 2-2Z" />,
+    download: <><path d="M12 3v12m-5-5 5 5 5-5M4 17v4h16v-4" /></>,
+    trash: <><path d="M4 7h16M10 4h4M7 7l1 14h8l1-14M10 11v7M14 11v7" /></>
   }
   return <svg aria-hidden="true" focusable="false" width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round">{paths[name]}</svg>
 }
@@ -46,6 +54,50 @@ function ActualProof({ src, fileType, className = '' }: { src: string; fileType:
     {isImage(fileType) ? <img src={src} alt="ملف التصميم الحالي" className="proof-image" /> :
       <iframe src={src + '#toolbar=0&view=FitH'} title="ملف التصميم PDF" className="proof-pdf" />}
   </div>
+}
+
+const DESIGN_UPDATE_URL = 'https://www.figma.com/design/n6Vv2dTAInthPQ9MEJwh42/PrintOK?node-id=66-128';
+const ACCEPTED_FILE_TYPES = ['application/pdf', 'image/png', 'image/jpeg'];
+const sizeLabel = (size: number) => size >= 1048576 ? (size / 1048576).toFixed(1) + ' MB' : Math.max(1, Math.ceil(size / 1024)) + ' KB';
+const normalizeDigits = (value: string) => value.replace(/[٠-٩۰-۹]/g, char => {
+  const a = '٠١٢٣٤٥٦٧٨٩'.indexOf(char);
+  return String(a >= 0 ? a : '۰۱۲۳۴۵۶۷۸۹'.indexOf(char));
+});
+type DashboardResponse = { orders: Order[]; stats: { all: number; pending: number; approved: number; changes: number; draft: number }; total: number; page: number; pageSize: number };
+function DropFile({ file, onChange, onError, disabled = false, compact = false }: {
+  file: File | null; onChange: (file: File | null) => void; onError: (message: string) => void; disabled?: boolean; compact?: boolean;
+}) {
+  const [dragging, setDragging] = useState(false);
+  const picker = useRef<HTMLInputElement>(null);
+  const select = (candidate?: File) => {
+    if (!candidate) return;
+    if (!ACCEPTED_FILE_TYPES.includes(candidate.type) || !candidate.size || candidate.size > 20 * 1024 * 1024) {
+      onError('الملف يجب أن يكون PDF أو PNG أو JPG بحجم لا يزيد عن 20MB');
+      return;
+    }
+    onChange(candidate);
+  };
+  return <div className={'file-drop-widget' + (compact ? ' file-drop-compact' : '')}>
+    {file ? <div className="selected-file-card" role="status">
+      <span className="selected-file-icon"><Icon name="file" size={24} /></span>
+      <div className="selected-file-content"><b title={file.name} dir="auto">{file.name}</b><small>{file.type === 'application/pdf' ? 'PDF' : file.type === 'image/png' ? 'PNG' : 'JPG'} · {sizeLabel(file.size)} · جاهز للرفع</small></div>
+      <button className="file-remove-btn" type="button" aria-label="إزالة الملف المختار" onClick={() => { onChange(null); if(picker.current)picker.current.value = ''; }} disabled={disabled}><Icon name="close" size={17} /></button>
+    </div> : <div className={'drop-surface' + (dragging ? ' drop-active' : '') + (disabled ? ' drop-disabled' : '')}
+      role="button" tabIndex={disabled ? -1 : 0} aria-label="اسحب ملف التصميم وأسقطه هنا أو اضغط للاختيار"
+      onClick={() => !disabled && picker.current?.click()}
+      onKeyDown={e => { if(!disabled && (e.key === 'Enter' || e.key === ' ')) { e.preventDefault(); picker.current?.click(); } }}
+      onDragEnter={e => { e.preventDefault(); e.stopPropagation(); if(!disabled) setDragging(true); }}
+      onDragOver={e => { e.preventDefault(); e.stopPropagation(); if(!disabled) setDragging(true); }}
+      onDragLeave={e => { e.preventDefault(); e.stopPropagation(); if(!e.currentTarget.contains(e.relatedTarget as Node))setDragging(false); }}
+      onDrop={e => { e.preventDefault(); e.stopPropagation(); setDragging(false); if(!disabled) select(e.dataTransfer.files[0]); }}>
+      <Icon name="upload" size={26} />
+      <strong>{dragging ? 'أفلت الملف هنا' : 'اسحب الملف وأسقطه هنا أو اضغط للاختيار'}</strong>
+      <small>PDF / PNG / JPG · حتى 20 MB</small>
+    </div>}
+    <input ref={picker} className="sr-only" type="file" accept=".pdf,.png,.jpg,.jpeg,application/pdf,image/png,image/jpeg" disabled={disabled}
+      onChange={e => { select(e.target.files?.[0]); e.target.value=''; }} />
+    {file && <button className="file-replace-btn" type="button" disabled={disabled} onClick={() => picker.current?.click()}>استبدال الملف</button>}
+  </div>;
 }
 
 export default function App() {
@@ -67,9 +119,18 @@ export default function App() {
   const [selectedId, setSelectedId] = useState<string | null>(null)
   const [form, setForm] = useState<FormValues>(emptyForm)
   const [artwork, setArtwork] = useState<File | null>(null)
+  const [revisionFile, setRevisionFile] = useState<File | null>(null)
+  const [revisionSuccess, setRevisionSuccess] = useState(false)
+  const [revisionAttachmentUrl, setRevisionAttachmentUrl] = useState('')
   const [search, setSearch] = useState('')
   const [filter, setFilter] = useState<'all' | Status>('all')
-  const [period, setPeriod] = useState<'30' | 'all'>('all')
+  const [period, setPeriod] = useState<'all' | '7' | '30' | '90' | '365'>('all')
+  const [sort, setSort] = useState<'newest' | 'oldest'>('newest')
+  const [pageIndex, setPageIndex] = useState(1)
+  const [total, setTotal] = useState(0)
+  const [stats, setStats] = useState({ all: 0, pending: 0, approved: 0, changes: 0, draft: 0 })
+  const [syncedAt, setSyncedAt] = useState<Date | null>(null)
+  const [refreshing, setRefreshing] = useState(false)
   const [mobileNav, setMobileNav] = useState(false)
   const [toast, setToast] = useState('')
   const [error, setError] = useState('')
