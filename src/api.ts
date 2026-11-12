@@ -8,6 +8,7 @@ export type Order = {
 export type Version = {
   id: string; number: number; status: Status; fileName: string; fileType: string; fileSize: number;
   note: string | null; date: string; decisionAt: string | null;
+  revisionFileName?: string | null; revisionFileType?: string | null; revisionFileSize?: number | null;
 };
 export type Activity = { id: string; type: string; details: Record<string, unknown>; date: string; ref: string; client: string };
 export type Review = {
