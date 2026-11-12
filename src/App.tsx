@@ -295,16 +295,32 @@ export default function App() {
     finally { setWorking(false) }
   }
   async function submitDecision() {
-    if (!review || !reviewToken || !decision) return
-    if (decision === 'changes' && !note.trim()) { setToast('أدخل تفاصيل التعديل المطلوب'); return }
-    setWorking(true)
+    if (!review || !reviewToken || !decision) return;
+    if (decision === 'changes' && !note.trim() && !revisionFile) { setToast('يجب كتابة ملاحظة أو إرفاق ملف واحد على الأقل'); return; }
+    setWorking(true);
     try {
-      const result = await api<{ status: Status }>('/review/' + encodeURIComponent(reviewToken) + '/decision', { method: 'POST', body: { decision, note } })
-      setReview(r => r ? { ...r, status: result.status, note } : r)
-      setDecision(null); setNote('')
-      setToast(result.status === 'approved' ? 'تم اعتماد النسخة المحددة بنجاح' : 'تم إرسال طلب التعديل للمطبعة')
-    } catch (e) { setToast(messageOf(e)) }
-    finally { setWorking(false) }
+      const body = decision === 'changes' ? new FormData() : { decision, note: '' };
+      if (body instanceof FormData) {
+        body.append('decision','changes');
+        body.append('note',note);
+        if (revisionFile) body.append('file',revisionFile);
+      }
+      const result = await api<{status:Status}>('/review/' + encodeURIComponent(reviewToken) + '/decision', { method:'POST', body });
+      setReview(prev => prev ? {...prev,status:result.status,note} : prev);
+      setRevisionSuccess(result.status === 'changes');
+      setDecision(null);
+      setNote('');
+      setRevisionFile(null);
+      setToast(result.status === 'approved' ? 'تم اعتماد النسخة المحددة بنجاح' : 'تم استلام طلب التعديل والمرفق المرجعي');
+    } catch(e) { setToast(messageOf(e)); }
+    finally { setWorking(false); }
+  }
+  async function openRevisionFile(versionId: string) {
+    if (!detail) return;
+    try {
+      const file = await api<{url:string}>('/orders/' + detail.id + '/revisions/' + versionId + '/file',{token:session});
+      window.open(file.url,'_blank','noopener,noreferrer');
+    } catch(e) { setToast(messageOf(e)); }
   }
   async function saveSettings() {
     setWorking(true)
@@ -328,25 +344,50 @@ export default function App() {
     <header className="customer-header"><span className="brand-mark"><Icon name="check" size={25} /></span><b>PrintOK</b></header>
     <main className="customer-main">
       {loading ? <Busy /> : error ? <div className="card missing-order"><h1>تعذر فتح المراجعة</h1><p>{error}</p></div> : review ? <>
-        <h1>مراجعة التصميم</h1>
-        <p className="customer-sub">{review.client} · طلب <span dir="ltr">{review.ref}</span></p>
-        <div className="card customer-proof"><div className="proof-version">النسخة V{review.version}</div>{proofUrl ? <ActualProof src={proofUrl} fileType={review.fileType} className="proof-small" /> : <Busy label="جاري تحميل الملف..." />}</div>
-        <p className="customer-instruction">راجع النصوص والمقاس والألوان قبل الموافقة.</p>
-        <p className="muted customer-note">موافقتك تخص النسخة V{review.version} فقط.<br />أي نسخة جديدة تحتاج موافقة جديدة.</p>
-        {review.status === 'pending' ? <>
-          <button className="btn btn-approve customer-action" disabled={working} onClick={() => setDecision('approved')}><Icon name="check" />أوافق على النسخة V{review.version}</button>
-          <button className="btn btn-outline customer-action" disabled={working} onClick={() => setDecision('changes')}>أطلب تعديلًا</button>
-        </> : <div className="review-result"><StatusBadge status={review.status} /><p>{review.status === 'approved' ? 'تم تسجيل الموافقة بالفعل على هذه النسخة.' : 'تم تسجيل طلب التعديل. سيتم رفع نسخة جديدة.'}</p></div>}
-        <p className="muted customer-footer">لا يبدأ الإنتاج قبل موافقة صريحة على هذه النسخة.<br />رابط خاص بهذا الطلب · لا تحتاج لإنشاء حساب</p>
+        {revisionSuccess ? <>
+          <h1>تم إرسال طلب التعديل</h1>
+          <p className="customer-sub">{review.client} · طلب <span dir="ltr">{review.ref}</span> · النسخة V{review.version}</p>
+          <section className="card revision-success-card">
+            <div className="revision-success-icon"><Icon name="check" size={52}/></div>
+            <h2>تم استلام طلب التعديل</h2>
+            <p>وصلت ملاحظاتك وملفك إلى المطبعة بنجاح.</p>
+            <StatusBadge status="changes"/>
+            <p className="muted">سيُطلب منك اعتماد التصميم الجديد عند إرساله. النسخة الحالية غير معتمدة.</p>
+          </section>
+          <button className="btn btn-primary customer-action" onClick={() => setRevisionSuccess(false)}>العودة إلى تفاصيل المراجعة</button>
+          <p className="muted customer-footer">لا تحتاج إلى إنشاء حساب.</p>
+        </> : decision === 'changes' && review.status === 'pending' ? <>
+          <h1>طلب تعديل على التصميم</h1>
+          <p className="customer-sub">{review.client} · طلب <span dir="ltr">{review.ref}</span> · النسخة V{review.version}</p>
+          <p className="revision-pill">طلب تعديل · V{review.version}</p>
+          <label className="revision-label" htmlFor="revision-note">ما التعديل المطلوب؟</label>
+          <p className="muted revision-hint">اكتب الملاحظات أو أرفق ملفاً يوضح التعديل.</p>
+          <textarea id="revision-note" className="field-control revision-textarea" rows={5} placeholder="مثال: يرجى تكبير الشعار وتغيير لون الخلفية..." value={note} onChange={e => setNote(e.target.value)} autoFocus/>
+          <h3 className="revision-label">ملف مرجعي للتعديل (إن وجد)</h3>
+          <DropFile file={revisionFile} onChange={setRevisionFile} onError={setToast} disabled={working} compact/>
+          <div className="revision-privacy">الملف المرجعي لا يستبدل نسخة الطباعة تلقائياً، ولا يُعد موافقة.</div>
+          <button className="btn btn-primary customer-action" disabled={working} onClick={submitDecision}>{working ? 'جاري إرسال الملاحظات والملف...' : 'إرسال طلب التعديل'}</button>
+          <button className="revision-cancel-btn" type="button" disabled={working} onClick={() => setDecision(null)}>العودة لمراجعة التصميم</button>
+          <p className="muted customer-footer">يجب كتابة ملاحظة أو إرفاق ملف واحد على الأقل.</p>
+        </> : <>
+          <h1>مراجعة التصميم</h1>
+          <p className="customer-sub">{review.client} · طلب <span dir="ltr">{review.ref}</span></p>
+          <div className="card customer-proof"><div className="proof-version">النسخة V{review.version}</div>{proofUrl ? <ActualProof src={proofUrl} fileType={review.fileType} className="proof-small" /> : <Busy label="جاري تحميل الملف..." />}</div>
+          <p className="customer-instruction">راجع النصوص والمقاس والألوان قبل الموافقة.</p>
+          <p className="muted customer-note">موافقتك تخص النسخة V{review.version} فقط.<br/>أي نسخة جديدة تحتاج موافقة جديدة.</p>
+          {review.status === 'pending' ? <>
+            <button className="btn btn-approve customer-action" disabled={working} onClick={() => setDecision('approved')}><Icon name="check"/>أوافق على النسخة V{review.version}</button>
+            <button className="btn btn-outline customer-action" disabled={working} onClick={() => setDecision('changes')}>أطلب تعديلًا</button>
+          </> : <div className="review-result"><StatusBadge status={review.status}/><p>{review.status==='approved'?'تم تسجيل الموافقة على هذه النسخة.':'تم إرسال طلب تعديل لهذه النسخة، بانتظار نسخة جديدة.'}</p></div>}
+          <p className="muted customer-footer">لا يبدأ الإنتاج قبل موافقة صريحة على هذه النسخة.<br/>رابط خاص بهذا الطلب · لا تحتاج لإنشاء حساب</p>
+        </>}
       </> : <Busy />}
     </main>
-    {decision && <div className="modal-backdrop"><div className="modal" role="dialog" aria-modal="true" aria-label="قرار مراجعة التصميم">
-      <button className="close-btn" onClick={() => setDecision(null)} aria-label="إغلاق"><Icon name="close" /></button>
-      <h2>{decision === 'approved' ? 'تأكيد الموافقة' : 'طلب تعديل التصميم'}</h2>
-      <p className="muted">{decision === 'approved' ? 'هل تؤكد اعتماد هذه النسخة تحديداً؟' : 'اكتب ملاحظات التعديل المطلوبة على هذه النسخة.'}</p>
-      {decision === 'changes' && <textarea className="field-control" rows={4} value={note} onChange={e => setNote(e.target.value)} placeholder="تفاصيل التعديلات..." autoFocus />}
-      <div className="modal-actions"><button className="btn btn-outline" onClick={() => setDecision(null)}>إلغاء</button><button className={'btn ' + (decision === 'approved' ? 'btn-approve' : 'btn-primary')} disabled={working} onClick={submitDecision}>{working ? 'جاري الحفظ...' : 'تأكيد القرار'}</button></div>
-    </div></div>}
+    {decision === 'approved' && <div className="modal-backdrop"><section className="modal" role="dialog" aria-modal="true" aria-label="تأكيد موافقة التصميم">
+      <button className="close-btn" onClick={() => setDecision(null)} aria-label="إغلاق"><Icon name="close"/></button>
+      <h2>تأكيد الموافقة</h2><p className="muted">هل تؤكد اعتماد هذه النسخة تحديداً؟</p>
+      <div className="modal-actions"><button className="btn btn-outline" onClick={() => setDecision(null)}>إلغاء</button><button className="btn btn-approve" onClick={submitDecision} disabled={working}>{working?'جاري التأكيد...':'تأكيد الموافقة'}</button></div>
+    </section></div>}
     {toast && <div className="toast" role="status">{toast}</div>}
   </div>
 
