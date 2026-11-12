@@ -273,24 +273,40 @@ async function handler(request) {
     return out({ shopName: name });
   }
   if (method === 'GET' && path === '/orders') {
-    const search = clean(u.searchParams.get('q'),160);
-    const onlyStatus = clean(u.searchParams.get('status'),30);
-    const days = Number(u.searchParams.get('days')) || 0;
-    const orderSort = u.searchParams.get('sort') === 'oldest' ? 'ASC' : 'DESC';
-    const requestedPage = Number(u.searchParams.get('page')) || 1;
-    const page = Math.max(1,Math.min(100000,Math.trunc(requestedPage)));
-    const limit = 50;
-    const conditions = [];
-    const params = [];
-    if (search) {
-      const digits = search.replace(/[٠-٩۰-۹]/g,c=>String('٠١٢٣٤٥٦٧٨٩'.indexOf(c)>=0?'٠١٢٣٤٥٦٧٨٩'.indexOf(c):'۰۱۲۳۴۵۶۷۸۹'.indexOf(c)));
-      params.push('%'+search.toLowerCase()+'%');
-      const termIndex = params.length;
-      params.push('%'+digits.replace(/\D/g,'')+'%');
-      const digitIndex = params.length;
-      conditions.push("(LOWER(o.client_name) LIKE $"+termIndex+" OR LOWER(o.product_name) LIKE $"+termIndex+" OR LOWER('PK-'||o.order_number::text) LIKE $"+termIndex+" OR LOWER(o.client_phone) LIKE $"+termIndex+(digits.replace(/\D/g,'') ? " OR regexp_replace(o.client_phone,'[^0-9]','','g') LIKE $"+digitIndex : "")+")");
+    const rawSearch=clean(u.searchParams.get('q'),160);
+    const onlyStatus=clean(u.searchParams.get('status'),30);
+    const days=Number(u.searchParams.get('days'))||0;
+    const sort=u.searchParams.get('sort')==='oldest'?'ASC':'DESC';
+    const page=Math.max(1,Math.min(100000,Math.trunc(Number(u.searchParams.get('page'))||1)));
+    const limit=50;
+    const conditions=[];
+    const values=[];
+    const bind=n=>String.fromCharCode(36)+n;
+    if(rawSearch) {
+      const search=rawSearch.replace(/[٠-٩۰-۹]/g,c=>String('٠١٢٣٤٥٦٧٨٩'.indexOf(c)>=0?'٠١٢٣٤٥٦٧٨٩'.indexOf(c):'۰۱۲۳۴۵۶۷۸۹'.indexOf(c)));
+      values.push('%'+search.toLowerCase()+'%');
+      const term=bind(values.length);
+      const parts=["LOWER(o.client_name) LIKE "+term,"LOWER(o.product_name) LIKE "+term,"LOWER('PK-'||o.order_number::text) LIKE "+term,"LOWER(o.client_phone) LIKE "+term];
+      const phone=search.replace(/[^0-9]/g,'');
+      if(phone) {values.push('%'+phone+'%');parts.push("regexp_replace(o.client_phone,'[^0-9]','','g') LIKE "+bind(values.length));}
+      conditions.push('('+parts.join(' OR ')+')');
     }
-    if (['draft','pending','approved','changes'].includes(onlyStatus)) {params.push(onlyStatus);conditions.push('o.status=
+    if(['draft','pending','approved','changes'].includes(onlyStatus)) {
+      values.push(onlyStatus);
+      conditions.push('o.status='+bind(values.length));
+    }
+    if([7,30,90,365].includes(days)) {
+      values.push(days);
+      conditions.push("o.created_at>=NOW()-("+bind(values.length)+"::int*INTERVAL '1 day')");
+    }
+    const where=conditions.length?' WHERE '+conditions.join(' AND '):'';
+    const stats=await query("SELECT count(*)::int AS all,count(*) FILTER(WHERE status='pending')::int AS pending,count(*) FILTER(WHERE status='approved')::int AS approved,count(*) FILTER(WHERE status='changes')::int AS changes,count(*) FILTER(WHERE status='draft')::int AS draft FROM printok_orders");
+    const total=await query('SELECT count(*)::int AS total FROM printok_orders o'+where,values);
+    const params=values.concat([limit,(page-1)*limit]);
+    const sql='SELECT o.*,v.id AS version_id,v.file_name,v.file_type,v.file_size FROM printok_orders o LEFT JOIN printok_versions v ON v.order_id=o.id AND v.version_number=o.current_version'+where+' ORDER BY o.created_at '+sort+',o.id DESC LIMIT '+bind(values.length+1)+' OFFSET '+bind(values.length+2);
+    const {rows}=await query(sql,params);
+    return out({orders:rows.map(serializeOrder),stats:stats.rows[0],total:total.rows[0].total,page,pageSize:limit});
+  }
   if (method === 'POST' && path === '/orders') return createOrder(request);
   if (method === 'GET' && path === '/events') {
     const { rows } = await query("SELECT e.id,e.event_type,e.details,e.created_at,o.order_number,o.client_name FROM printok_events e LEFT JOIN printok_orders o ON o.id=e.order_id ORDER BY e.created_at DESC LIMIT 100");
