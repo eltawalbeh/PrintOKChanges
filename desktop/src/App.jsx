@@ -260,7 +260,7 @@ export default function App(){
             {storageMove&&<p className="notice warning">تم نسخ بياناتك إلى المكان الجديد. المجلد القديم بقي كما هو لسلامتك: <span dir="ltr">{storageMove.oldLocation}</span></p>}
           </section>
           <section className="card settings-panel"><h2><Icon name="users"/>مواقع تخزين العملاء</h2><p className="subtext">يمكنك تعيين مجلد مستقل لأي عميل. التغيير ينطبق على الملفات الجديدة، وتظل الملفات السابقة في مواقعها المحفوظة.</p>
-            {clients.map(c=><div className="folder-setting-row" key={c.key}><div className="folder-setting-info"><b>{c.name}</b><small dir="ltr">{c.phone}</small><div className="folder-path" dir="ltr">{db.clientFolders[keyFromPhone(c.phone)]||'المسار الافتراضي داخل المجلد الرئيسي'}</div></div><div><button className="btn outline tiny" disabled={busy} onClick={()=>call(()=>bridge.chooseClientFolder(c.phone),'تم تغيير مسار هذا العميل')}>اختيار مجلد</button>{db.clientFolders[keyFromPhone(c.phone)]&&<button className="btn ghost tiny" disabled={busy} onClick={()=>call(()=>bridge.resetClientFolder(c.phone),'تمت العودة للمجلد الافتراضي')}>افتراضي</button>}</div></div>)}
+            {clients.map(c=><div className="folder-setting-row" key={c.key}><div className="folder-setting-info"><b>{c.name}</b><small dir="ltr">{c.phone}</small><div className="folder-path" dir="ltr">{db.clientDirectories?.[c.key]||'المسار الافتراضي داخل المجلد الرئيسي'}</div></div><div><button className="btn outline tiny" disabled={busy} onClick={()=>call(()=>bridge.chooseClientFolder(c.phone),'تم تغيير مسار هذا العميل')}>اختيار مجلد</button>{db.clientDirectories?.[c.key]&&<button className="btn ghost tiny" disabled={busy} onClick={()=>call(()=>bridge.resetClientFolder(c.phone),'تمت العودة للمجلد الافتراضي')}>افتراضي</button>}</div></div>)}
             {!clients.length&&<p className="subtext">بعد إضافة عميل، سيظهر هنا لتحديد مجلد التخزين الخاص به.</p>}
           </section>
           <section className="card settings-panel"><h2><Icon name="backup"/>نسخة احتياطية</h2><p className="subtext">انسخ ملف البيانات وملفات العملاء إلى مجلد تختاره. الملفات المحفوظة خارج المجلد الرئيسي تُضاف مع قائمة لاستعادتها يدوياً.</p><button className="btn outline" disabled={busy} onClick={()=>call(()=>bridge.backup(),'تم إنشاء نسخة احتياطية على الكمبيوتر')}><Icon name="backup"/>إنشاء نسخة احتياطية</button></section>
@@ -277,8 +277,4 @@ export default function App(){
     </main>
     {toast&&<div className={'toast '+toast.type} role="status">{toast.message}</div>}
   </div>
-}
-function keyFromPhone(phone){
-  // Frontend cannot derive the cryptographic local client key; render default text when no user override mapping exists.
-  return String(phone)
 }
