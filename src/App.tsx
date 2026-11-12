@@ -1,5 +1,5 @@
-import { useEffect, useRef, useState, type ChangeEvent, type FormEvent, type ReactNode } from 'react'
-import { api, getSession, setSession, type Activity, type Order, type Review, type Status } from './api'
+import { useEffect, useRef, useState, type FormEvent, type ReactNode } from 'react'
+import { api, getSession, setSession, type Activity, type Order, type Review, type Status, type Version } from './api'
 
 type Page = 'dashboard' | 'new' | 'details' | 'approvals' | 'activity' | 'settings'
 type IconName = 'grid' | 'plus' | 'check' | 'history' | 'settings' | 'bell' | 'search' | 'upload' | 'arrow' | 'up' | 'menu' | 'close' | 'link' | 'file' | 'clock' | 'log-out' | 'shield' | 'eye' | 'filter' | 'calendar' | 'chevron' | 'refresh' | 'user' | 'phone' | 'download' | 'trash'
@@ -100,6 +100,23 @@ function DropFile({ file, onChange, onError, disabled = false, compact = false }
   </div>;
 }
 
+function FeedbackPanel({ order, onOpen }: { order: Order; onOpen: (versionId: string, download?: boolean) => void }) {
+  const feedback = order.versions?.find(v => v.status === 'changes' && (v.note || v.revisionFileName));
+  if (!feedback) return null;
+  return <section className="card feedback-panel">
+    <div className="feedback-header"><h2>ملاحظات العميل</h2><span className="version-chip">النسخة V{feedback.number}</span></div>
+    {feedback.note && <div className="feedback-note">{feedback.note}</div>}
+    {feedback.revisionFileName && <div className="feedback-attachment">
+      <h3>مرفق العميل</h3>
+      <div className="stored-file-card"><span className="selected-file-icon"><Icon name="file" size={23}/></span>
+        <div><b dir="auto">{feedback.revisionFileName}</b><small>{feedback.revisionFileType === 'application/pdf' ? 'PDF' : 'صورة'} · {feedback.revisionFileSize ? sizeLabel(feedback.revisionFileSize) : ''} · ملف مرجعي فقط</small></div>
+      </div>
+      <div className="feedback-buttons"><button className="btn btn-outline" onClick={() => onOpen(feedback.id,false)}><Icon name="eye" size={18}/>عرض المرفق</button><button className="btn btn-primary" onClick={() => onOpen(feedback.id,true)}><Icon name="download" size={18}/>تنزيل الملف</button></div>
+    </div>}
+    <p className="muted feedback-footnote">مرفق العميل للمراجعة فقط ولا يستبدل نسخة الإنتاج. يجب اعتماد أي نسخة جديدة بشكل مستقل.</p>
+  </section>;
+}
+
 export default function App() {
   const url = new URLSearchParams(window.location.search)
   const reviewToken = url.get('token')
@@ -120,6 +137,7 @@ export default function App() {
   const [form, setForm] = useState<FormValues>(emptyForm)
   const [artwork, setArtwork] = useState<File | null>(null)
   const [revisionFile, setRevisionFile] = useState<File | null>(null)
+  const [newVersionFile, setNewVersionFile] = useState<File | null>(null)
   const [revisionSuccess, setRevisionSuccess] = useState(false)
   const [revisionAttachmentUrl, setRevisionAttachmentUrl] = useState('')
   const [search, setSearch] = useState('')
@@ -268,17 +286,19 @@ export default function App() {
     } catch (e) { setToast(messageOf(e)) }
     finally { setWorking(false) }
   }
-  async function newVersion(event: ChangeEvent<HTMLInputElement>) {
-    const file = event.target.files?.[0]
-    if (!file || !detail) return
-    const data = new FormData(); data.append('file', file)
-    setWorking(true)
+  async function newVersion(file: File) {
+    if (!detail || !file) return;
+    const data = new FormData();
+    data.append('file',file);
+    setWorking(true);
     try {
-      await api('/orders/' + detail.id + '/versions', { method: 'POST', token: session, body: data })
-      setToast('تم رفع نسخة جديدة. تحتاج موافقة مستقلة من العميل.')
-      await refresh(session); await openOrder(detail.id)
-    } catch (e) { setToast(messageOf(e)) }
-    finally { setWorking(false); event.target.value = '' }
+      await api('/orders/'+detail.id+'/versions',{method:'POST',token:session,body:data});
+      setNewVersionFile(null);
+      setToast('تم رفع نسخة جديدة بنجاح؛ تحتاج موافقة مستقلة من العميل.');
+      await refresh(session);
+      await openOrder(detail.id);
+    } catch(e) { setToast(messageOf(e)); }
+    finally { setWorking(false); }
   }
   async function copyReviewLink() {
     if (!detail) return
@@ -315,10 +335,10 @@ export default function App() {
     } catch(e) { setToast(messageOf(e)); }
     finally { setWorking(false); }
   }
-  async function openRevisionFile(versionId: string) {
+  async function openRevisionFile(versionId: string, download = false) {
     if (!detail) return;
     try {
-      const file = await api<{url:string}>('/orders/' + detail.id + '/revisions/' + versionId + '/file',{token:session});
+      const file = await api<{url:string}>('/orders/' + detail.id + '/revisions/' + versionId + '/file' + (download ? '?download=1' : ''),{token:session});
       window.open(file.url,'_blank','noopener,noreferrer');
     } catch(e) { setToast(messageOf(e)); }
   }
@@ -468,20 +488,41 @@ export default function App() {
           <div className="create-footer"><div className="create-buttons"><button className="btn btn-primary" type="submit" disabled={working}>{working ? 'جاري حفظ الطلب...' : 'حفظ وإرسال للمراجعة'}</button><button className="btn btn-outline" type="button" disabled={working} onClick={() => { const f = document.querySelector('form'); if (f?.reportValidity()) saveOrder({ preventDefault() {} } as FormEvent, true) }}>حفظ كمسودة</button></div><p>لن يبدأ الإنتاج قبل موافقة صريحة على النسخة المرفوعة</p></div>
         </form>
       </>}
-      {page === 'details' && <>{loading ? <Busy /> : detail ? <>
-        <header className="page-heading details-heading"><div><h1>تفاصيل طلب <span dir="ltr">{detail.ref}</span></h1><p>{detail.client} · {detail.product} · آخر نسخة {detail.currentVersion ? 'V' + detail.currentVersion : 'مسودة'}</p></div><button className="btn btn-primary copy-action" disabled={working || detail.status !== 'pending'} onClick={copyReviewLink}><Icon name="link" size={18} />نسخ رابط المراجعة</button></header>
-        <div className="details-status"><StatusBadge status={detail.status} /></div>
+      {page === 'details' && <>{loading ? <Busy/> : detail ? <>
+        <header className="page-heading details-heading"><div><h1>تفاصيل طلب <span dir="ltr">{detail.ref}</span></h1><p>{detail.client} · {detail.product} · آخر نسخة {detail.currentVersion?'V'+detail.currentVersion:'مسودة'}</p></div>
+          <button className="btn btn-primary copy-action" disabled={working||detail.status!=='pending'} onClick={copyReviewLink}><Icon name="link" size={18}/>نسخ رابط المراجعة</button>
+        </header>
+        <div className="details-status"><StatusBadge status={detail.status}/></div>
+        <section className="card customer-details">
+          <div className="customer-details-heading"><Icon name="user" size={22}/><h2>معلومات العميل وتفاصيل الطلب</h2></div>
+          <div className="customer-details-grid">
+            <div><small>اسم العميل</small><strong>{detail.client}</strong></div>
+            <div><small>رقم الموبايل</small><a dir="ltr" href={'tel:'+detail.phone.replace(/[^\d+]/g,'')}><Icon name="phone" size={17}/>{detail.phone}</a></div>
+            <div><small>اسم المنتج / المشروع</small><strong>{detail.product}</strong></div>
+            <div><small>الكمية</small><strong>{detail.quantity}</strong></div>
+            <div><small>المقاس</small><strong>{detail.dimensions||'غير محدد'}</strong></div>
+            <div><small>الخامة</small><strong>{detail.material||'غير محددة'}</strong></div>
+            <div><small>تاريخ إنشاء الطلب</small><strong>{formatDate(detail.createdAt)}</strong></div>
+            <div><small>رقم الطلب</small><strong dir="ltr">{detail.ref}</strong></div>
+          </div>
+        </section>
         <div className="detail-grid">
-          <section className="card detail-proof-card"><div className="detail-panel-heading"><h2>التصميم الحالي — {detail.currentVersion ? 'V' + detail.currentVersion : 'مسودة'}</h2><span className="version-chip">النسخة الحالية</span></div>
-            {proofUrl && detail.fileType ? <ActualProof src={proofUrl} fileType={detail.fileType} /> : <div className="proof-stage proof-placeholder"><Icon name="file" size={34} /><p>لا يوجد ملف مرفوع بعد</p></div>}
-            <p className={'detail-warning ' + (detail.status === 'approved' ? 'approved-text' : '')}>{detail.status === 'approved' ? 'تم اعتماد النسخة الحالية ويمكن تجهيز الإنتاج.' : detail.status === 'changes' ? 'طلب العميل تعديلات على هذه النسخة.' : detail.status === 'pending' ? 'النسخة الحالية غير معتمدة — الإنتاج متوقف.' : 'يجب رفع ملف قبل إرسال المسودة.'}<br />كل نسخة جديدة تحتاج موافقة جديدة.</p>
+          <section className="card detail-proof-card">
+            <div className="detail-panel-heading"><h2>التصميم الحالي — {detail.currentVersion?'V'+detail.currentVersion:'مسودة'}</h2><span className="version-chip">النسخة الحالية</span></div>
+            {proofUrl && detail.fileType ? <ActualProof src={proofUrl} fileType={detail.fileType}/> : <div className="proof-stage proof-placeholder"><Icon name="file" size={34}/><p>لا يوجد ملف مرفوع بعد</p></div>}
+            {detail.fileName && <div className="file-saved-state"><Icon name="check" size={17}/><span>تم رفع الملف وحفظه: <b dir="auto">{detail.fileName}</b></span></div>}
+            <p className={'detail-warning '+(detail.status==='approved'?'approved-text':'')}>{detail.status==='approved'?'تم اعتماد النسخة الحالية ويمكن تجهيز الإنتاج.':detail.status==='changes'?'طلب العميل تعديلات على هذه النسخة.':detail.status==='pending'?'النسخة الحالية غير معتمدة — الإنتاج متوقف.':'يجب رفع ملف قبل إرسال المسودة.'}<br/>كل نسخة جديدة تحتاج موافقة جديدة.</p>
           </section>
-          <section className="card versions-card"><h2>الإصدارات والموافقات</h2><div className="versions-list">
-            {(detail.versions || []).map((v, index) => <div className={'version-item ' + (!index ? 'current-version' : '')} key={v.id}><span className={'version-dot dot-' + v.status} /><div><b>V{v.number} · {formatDate(v.date)}</b><p>{v.note || statusLabels[v.status]}</p><small title={v.fileName}>{v.fileName}</small></div></div>)}
-            <div className="version-item"><span className="version-dot dot-created" /><div><b>إنشاء الطلب · {formatDate(detail.createdAt)}</b><p>طلب الطباعة مسجل في Neon</p></div></div>
-          </div><label className="btn btn-outline full-width upload-new">{working ? 'جاري رفع النسخة...' : 'رفع نسخة جديدة'}<input className="file-input" type="file" disabled={working} accept="application/pdf,image/png,image/jpeg,.pdf,.png,.jpg,.jpeg" onChange={newVersion} /></label></section>
+          <section className="card versions-card"><h2>الإصدارات والموافقات</h2>
+            <div className="versions-list">
+              {(detail.versions||[]).map((v:Version,index)=><div className={'version-item '+(!index?'current-version':'')} key={v.id}><span className={'version-dot dot-'+v.status}/><div><b>V{v.number} · {formatDate(v.date)}</b><p>{v.note||statusLabels[v.status]}</p><small title={v.fileName}>{v.fileName}</small>{v.revisionFileName&&<small>مرفق العميل: {v.revisionFileName}</small>}</div></div>)}
+              <div className="version-item"><span className="version-dot dot-created"/><div><b>إنشاء الطلب · {formatDate(detail.createdAt)}</b><p>الطلب مسجل في Neon</p></div></div>
+            </div>
+            <div className="new-version-action"><h3>رفع نسخة جديدة {detail.currentVersion?'V'+(detail.currentVersion+1):'V1'}</h3><DropFile file={newVersionFile} onChange={setNewVersionFile} onError={setToast} compact disabled={working}/><button className="btn btn-outline full-width" type="button" disabled={!newVersionFile||working} onClick={()=>newVersionFile&&newVersion(newVersionFile)}>{working?'جاري الرفع...':'تأكيد رفع النسخة الجديدة'}</button></div>
+          </section>
         </div>
-        <section className="card flow-card"><h3>تسلسل الطلب — {detail.status === 'approved' ? 'النسخة الحالية معتمدة' : 'الموافقة مرتبطة بالنسخة الحالية فقط'}</h3><div className="flow-line"><span>إنشاء الطلب</span><Icon name="arrow" size={17} /><span>رفع التصميم</span><Icon name="arrow" size={17} /><span>مراجعة العميل</span><Icon name="arrow" size={17} /><b>{statusLabels[detail.status]}</b></div></section>
+        <FeedbackPanel order={detail} onOpen={openRevisionFile}/>
+        <section className="card flow-card"><h3>تسلسل الطلب — {detail.status==='approved'?'النسخة الحالية معتمدة':'الموافقة مرتبطة بالنسخة الحالية فقط'}</h3><div className="flow-line"><span>إنشاء الطلب</span><Icon name="arrow" size={17}/><span>رفع التصميم</span><Icon name="arrow" size={17}/><span>مراجعة العميل</span><Icon name="arrow" size={17}/><b>{statusLabels[detail.status]}</b></div></section>
       </> : <div className="card empty-state">اختر طلباً لعرض تفاصيله.</div>}</>}
       {page === 'activity' && <><header className="page-heading"><div><h1>سجل النشاط</h1><p>القرارات المسجلة فعلياً في قاعدة البيانات</p></div></header><section className="card activity-card"><h2>آخر النشاطات</h2>{events.map(event => <div className="activity-item" key={event.id}><span className="activity-icon"><Icon name="clock" size={17} /></span><div><b>{actLabels[event.type] || event.type} · {event.ref}</b><p>{event.client}</p></div><time>{formatDate(event.date)}</time></div>)}{!events.length && <div className="empty-state">لم يتم تسجيل نشاط بعد.</div>}</section></>}
       {page === 'settings' && <><header className="page-heading"><div><h1>الإعدادات</h1><p>بيانات المطبعة المحفوظة في قاعدة البيانات</p></div></header><section className="card settings-card"><h2>بيانات المطبعة</h2><label className="form-field">اسم المطبعة<input className="field-control" maxLength={120} value={shop} onChange={e => setShop(e.target.value)} /></label><button className="btn btn-primary settings-save" disabled={working} onClick={saveSettings}>{working ? 'جاري الحفظ...' : 'حفظ التغييرات'}</button><div className="settings-notice"><Icon name="shield" size={20} /><span>كلمة مرور مؤقتة مشتركة، سيتم استبدالها بحسابات موظفين وصلاحيات لاحقاً.</span></div></section></>}
