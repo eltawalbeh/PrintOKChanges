@@ -463,10 +463,7 @@ export default function App() {
               <label className="form-field">المقاس<input className="field-control" placeholder="5 × 5 سم" value={form.dimensions} onChange={e => setForm(f => ({ ...f, dimensions: e.target.value }))} /></label>
               <label className="form-field">الخامة<input className="field-control" placeholder="ورق لاصق مطفي" value={form.material} onChange={e => setForm(f => ({ ...f, material: e.target.value }))} /></label>
             </div><div className="form-divider" />
-            <label className="file-section">ملف التصميم — النسخة V1
-              <span className="upload-zone"><Icon name="upload" size={25} /><strong>{artwork ? artwork.name : 'اضغط لاختيار الملف'}</strong><small>PDF / PNG / JPG · حتى 20 MB</small></span>
-              <input className="file-input" type="file" accept="application/pdf,image/png,image/jpeg,.pdf,.png,.jpg,.jpeg" onChange={e => setArtwork(e.target.files?.[0] || null)} />
-            </label>
+            <div className="file-section"><h3>ملف التصميم — النسخة V1</h3><DropFile file={artwork} onChange={setArtwork} onError={setToast} disabled={working}/>{artwork && <p className="file-ready-hint"><Icon name="check" size={17}/>تم اختيار الملف، وسيتم رفعه وحفظه بعد إرسال الطلب.</p>}</div>
           </section>
           <div className="create-footer"><div className="create-buttons"><button className="btn btn-primary" type="submit" disabled={working}>{working ? 'جاري حفظ الطلب...' : 'حفظ وإرسال للمراجعة'}</button><button className="btn btn-outline" type="button" disabled={working} onClick={() => { const f = document.querySelector('form'); if (f?.reportValidity()) saveOrder({ preventDefault() {} } as FormEvent, true) }}>حفظ كمسودة</button></div><p>لن يبدأ الإنتاج قبل موافقة صريحة على النسخة المرفوعة</p></div>
         </form>
