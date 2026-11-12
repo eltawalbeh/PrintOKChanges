@@ -91,6 +91,7 @@ export default function App(){
   const [busy,setBusy]=useState(false),[toast,setToast]=useState(null),[preview,setPreview]=useState(null)
   const [update,setUpdate]=useState(null),[storageMove,setStorageMove]=useState(null)
   const [passwords,setPasswords]=useState({old:'',next:'',confirm:''})
+  const [githubPat,setGithubPat]=useState('')
   const alive=useRef(true)
   const notify=(message,type='ok')=>setToast({message,type})
   useEffect(()=>{bridge.authStatus().then(setAuth).catch(e=>notify(e.message,'error'));return()=>{alive.current=false}},[])
@@ -267,6 +268,16 @@ export default function App(){
           <section className="card settings-panel"><h2><Icon name="globe"/>تحديثات البرنامج</h2><p className="subtext">الطلبات والملفات تعمل بدون إنترنت. الإنترنت يُستخدم فقط لفحص إصدارات Desktop الجديدة وتحميلها من GitHub.</p>
             <div className="update-line"><span>الإصدار المثبت: {db.version}</span><span>{update?.online?'تم الاتصال بخدمة التحديثات':update?.message||'لم يتم فحص التحديثات'}</span></div>
             <div className="settings-actions"><button className="btn outline" onClick={async()=>{setBusy(true);try{const r=await bridge.checkUpdates();setUpdate(r);notify(r.hasUpdate?'يوجد تحديث جديد: '+r.latestVersion:r.message)}finally{setBusy(false)}}} disabled={busy}><Icon name="refresh"/>فحص التحديثات</button>{update?.hasUpdate&&<button className="btn primary" onClick={()=>bridge.openUpdate(update.releaseUrl)}><Icon name="download"/>فتح إصدار {update.latestVersion}</button>}</div>
+          </section>
+          <section className="card settings-panel"><h2><Icon name="shield"/>وصول GitHub الخاص للتحديثات</h2>
+            <p className="subtext">لأن PrintOKChanges مستودع خاص، يمكن إدخال Fine-grained Personal Access Token بصلاحية <b>Contents: Read</b> لهذا المستودع فقط. يتم حفظه مشفراً عبر Windows، ولا يُرفع إلى ملفات العملاء.</p>
+            <p className="subtext">{db.githubTokenConfigured?'تم حفظ اعتماد GitHub مشفراً على هذا الكمبيوتر.':'لا يوجد GitHub Token؛ يمكن فتح صفحة الإصدارات في المتصفح بعد تسجيل الدخول، أو إضافته لفحص التحديثات من التطبيق.'}</p>
+            <input type="password" className="wide-input" placeholder="GitHub fine-grained token (اختياري)" value={githubPat} onChange={e=>setGithubPat(e.target.value)} autoComplete="off"/>
+            <div className="settings-actions">
+              <button className="btn primary" disabled={busy||!githubPat} onClick={async()=>{const ok=await call(()=>bridge.saveGithubToken(githubPat),'تم حفظ GitHub Token مشفراً');if(ok){setGithubPat('');setUpdate(await bridge.checkUpdates())}}}>حفظ توكن القراءة</button>
+              {db.githubTokenConfigured&&<button className="btn outline" disabled={busy} onClick={()=>call(()=>bridge.clearGithubToken(),'تم مسح GitHub Token')}>حذف التوكن</button>}
+              <button className="btn outline" onClick={()=>bridge.openUpdate('https://github.com/eltawalbeh/PrintOKChanges/releases')}>فتح صفحة الإصدارات</button>
+            </div>
           </section>
           <section className="card settings-panel"><h2><Icon name="settings"/>اسم المطبعة</h2><label>اسم المطبعة<input className="wide-input" value={db.shopName} onChange={e=>setDb(x=>({...x,shopName:e.target.value}))}/></label><button className="btn primary" disabled={busy} onClick={()=>call(()=>bridge.saveShopName(db.shopName),'تم حفظ اسم المطبعة')}>حفظ الاسم</button></section>
           <section className="card settings-panel"><h2><Icon name="shield"/>تغيير كلمة المرور المحلية</h2><div className="passwords"><input type="password" value={passwords.old} onChange={e=>setPasswords(x=>({...x,old:e.target.value}))} placeholder="كلمة المرور الحالية"/><input type="password" value={passwords.next} onChange={e=>setPasswords(x=>({...x,next:e.target.value}))} placeholder="كلمة المرور الجديدة"/><input type="password" value={passwords.confirm} onChange={e=>setPasswords(x=>({...x,confirm:e.target.value}))} placeholder="تأكيد كلمة المرور"/></div><button className="btn outline" disabled={busy} onClick={async()=>{const x=await call(()=>bridge.changePassword(passwords.old,passwords.next,passwords.confirm),'تم تغيير كلمة المرور');if(x)setPasswords({old:'',next:'',confirm:''})}}>حفظ كلمة المرور</button>
