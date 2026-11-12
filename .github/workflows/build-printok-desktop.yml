@@ -1,0 +1,77 @@
+name: PrintOK Desktop — Windows 10 Release
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'desktop/**'
+      - '.github/workflows/build-printok-desktop.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+concurrency:
+  group: printok-desktop-0.1.0
+  cancel-in-progress: false
+
+jobs:
+  windows:
+    runs-on: windows-latest
+    timeout-minutes: 55
+    defaults:
+      run:
+        working-directory: desktop
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+      - name: Install dependencies
+        run: npm install --no-audit --no-fund
+      - name: Validate Electron source
+        run: npm run check
+      - name: Build production UI
+        run: npm run build
+      - name: Package Windows Installer and Portable executable
+        run: npx electron-builder --win nsis portable --x64 --publish never
+        env:
+          CSC_IDENTITY_AUTO_DISCOVERY: 'false'
+      - name: Archive portable executable
+        shell: pwsh
+        run: |
+          Compress-Archive -Path "release/PrintOK-Desktop-Portable-0.1.0.exe" -DestinationPath "release/PrintOK-Desktop-Windows10-Portable.zip" -CompressionLevel Optimal
+      - name: Upload Windows artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: PrintOK-Desktop-Windows10-0.1.0
+          path: |
+            desktop/release/PrintOK-Desktop-Setup-0.1.0.exe
+            desktop/release/PrintOK-Desktop-Portable-0.1.0.exe
+            desktop/release/PrintOK-Desktop-Windows10-Portable.zip
+          if-no-files-found: error
+      - name: Publish private Windows pre-release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: desktop-v0.1.0
+          target_commitish: main
+          name: PrintOK Desktop v0.1.0 — Windows 10 x64
+          prerelease: true
+          generate_release_notes: false
+          body: |
+            Windows local-first desktop version of PrintOK.
+
+            - Installable Windows 10/11 x64 Setup.exe and Portable.exe
+            - Portable executable also available as a ZIP archive
+            - Local PDF / image storage under configurable folders per customer
+            - Offline login, orders, version history, local approval decisions
+            - Manual app update checks via private GitHub Releases (read-only PAT optional)
+            - No website / Neon synchronization in this first desktop preview
+            - Unsigned build: Windows SmartScreen may show an unknown publisher warning
+
+            The first launch asks you to create a new local password.
+            Note that the original Figma Make / web repositories remain unchanged.
+          files: |
+            desktop/release/PrintOK-Desktop-Setup-0.1.0.exe
+            desktop/release/PrintOK-Desktop-Portable-0.1.0.exe
+            desktop/release/PrintOK-Desktop-Windows10-Portable.zip
+          fail_on_unmatched_files: true
