@@ -27,5 +27,7 @@ contextBridge.exposeInMainWorld('printokDesktop', Object.freeze({
   openClientFolder: (orderId,phone,client) => call('settings:openClientFolder',{orderId,phone,client}),
   backup: () => call('settings:backup'),
   checkUpdates: () => call('updates:check'),
+  saveGithubToken: token => call('updates:setToken',{token}),
+  clearGithubToken: () => call('updates:clearToken'),
   openUpdate: url => call('updates:open',{url})
 }))
