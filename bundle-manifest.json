@@ -12,7 +12,8 @@
     "bucket": "printok-artwork",
     "functionSlug": "printokapi",
     "functionUrl": "https://br-cold-wind-baoi51hy-printokapi.compute.c-8.eu-central-1.aws.neon.tech/",
-    "tables": 6
+    "tables": 6,
+    "functionDeployment": 4
   },
   "passwordOnlyLogin": true,
   "secretInSource": false,
@@ -26,7 +27,13 @@
     "public customer review tokens",
     "audit trail",
     "responsive Arabic RTL",
-    "reduced-motion friendly animations"
+    "reduced-motion friendly animations",
+    "Figma customer revision flow and private customer attachments",
+    "file drag and drop with selected file confirmation",
+    "backend search by phone/order/customer/product",
+    "icon filters for period/status/sort and pagination",
+    "auto-refresh polling every 10 seconds",
+    "customer details in staff order screen"
   ],
   "verification": {
     "databaseSchema": true,
@@ -36,7 +43,10 @@
     "apiBundleBuildPassed": true,
     "staffLoginTestedEndToEnd": false,
     "artworkUploadTestedEndToEnd": false,
-    "customerApprovalTestedEndToEnd": false
+    "customerApprovalTestedEndToEnd": false,
+    "backendSearchTestedEndToEnd": false,
+    "newPublishedWebsiteUpdated": false,
+    "autoRefreshMode": "10 second polling plus focus"
   },
   "files": [
     {
@@ -88,6 +98,18 @@
       "path": ".github/workflows/build-printok-api.yml",
       "operation": "new",
       "purpose": "Neon Function compile + ZIP packaging"
+    },
+    {
+      "path": "backend/migrations/002_customer_revision_attachment.sql",
+      "operation": "new",
+      "purpose": "Customer reference attachments tied to a specific design version (applied to Neon)"
     }
-  ]
+  ],
+  "updated": "2026-11-12",
+  "figma": {
+    "original": "https://www.figma.com/design/n6Vv2dTAInthPQ9MEJwh42/PrintOK?node-id=19-2",
+    "updates": "https://www.figma.com/design/n6Vv2dTAInthPQ9MEJwh42/PrintOK?node-id=66-128",
+    "make": "https://www.figma.com/make/t0hQzy8mlmmV2ywJHOnnXp/PrintOK",
+    "published": "https://printok.figma.site/"
+  }
 }
