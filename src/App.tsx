@@ -139,18 +139,72 @@ export default function App() {
 
   useEffect(() => { if (!toast) return; const id = setTimeout(() => setToast(''), 4500); return () => clearTimeout(id) }, [toast])
 
+  const orderPath = () => {
+    const params = new URLSearchParams();
+    const term = normalizeDigits(search).trim();
+    if (term) params.set('q', term);
+    if (page === 'approvals') params.set('status', 'pending');
+    else if (filter !== 'all') params.set('status', filter);
+    if (period !== 'all') params.set('days', period);
+    if (sort === 'oldest') params.set('sort', 'oldest');
+    params.set('page', String(pageIndex));
+    return '/orders?' + params.toString();
+  };
+  const applyList = (data: DashboardResponse) => {
+    setOrders(data.orders);
+    setStats(data.stats);
+    setTotal(data.total);
+    setSyncedAt(new Date());
+  };
   async function refresh(token: string) {
-    setLoading(true)
+    setLoading(true);
     try {
-      const [o, s, a] = await Promise.all([
-        api<{ orders: Order[] }>('/orders', { token }),
+      const [o, settings, activity] = await Promise.all([
+        api<DashboardResponse>(orderPath(), { token }),
         api<{ shopName: string }>('/settings', { token }),
         api<{ events: Activity[] }>('/events', { token })
-      ])
-      setOrders(o.orders); setShop(s.shopName); setEvents(a.events); setError('')
-    } catch (e) { setError(messageOf(e)); throw e }
-    finally { setLoading(false) }
+      ]);
+      applyList(o); setShop(settings.shopName); setEvents(activity.events); setError('');
+    } catch (e) { setError(messageOf(e)); throw e; }
+    finally { setLoading(false); }
   }
+  useEffect(() => {
+    if (!session || customerMode || !['dashboard','approvals'].includes(page)) return;
+    const controller = new AbortController();
+    const timeout = setTimeout(() => {
+      setRefreshing(true);
+      api<DashboardResponse>(orderPath(), {token:session,signal:controller.signal})
+        .then(data => { if (!controller.signal.aborted) { applyList(data); setError(''); } })
+        .catch(e => { if (!controller.signal.aborted) setError(messageOf(e)); })
+        .finally(() => { if (!controller.signal.aborted) setRefreshing(false); });
+    }, 320);
+    return () => { clearTimeout(timeout); controller.abort(); };
+  }, [session,customerMode,page,search,filter,period,sort,pageIndex]);
+  useEffect(() => {
+    if (!session || customerMode) return;
+    let active = true;
+    let inFlight = false;
+    const poll = async () => {
+      if (!active || inFlight || document.visibilityState !== 'visible' || working) return;
+      inFlight = true;
+      try {
+        if (page === 'dashboard' || page === 'approvals') {
+          const data = await api<DashboardResponse>(orderPath(), {token:session});
+          if (active) applyList(data);
+        } else if (page === 'details' && selectedId) {
+          const r = await api<{order:Order}>('/orders/' + selectedId, {token:session});
+          if (active) setDetail(r.order);
+        } else if (page === 'activity') {
+          const r = await api<{events:Activity[]}>('/events', {token:session});
+          if (active) setEvents(r.events);
+        }
+      } catch { /* Keep the last confirmed state; manual refresh remains available. */ }
+      finally { inFlight = false; }
+    };
+    const timer = window.setInterval(poll,10000);
+    window.addEventListener('focus',poll);
+    return () => { active = false; window.clearInterval(timer); window.removeEventListener('focus',poll); };
+  }, [session,customerMode,page,selectedId,working,search,filter,period,sort,pageIndex]);
   useEffect(() => {
     if (customerMode) {
       setLoading(true)
@@ -261,14 +315,7 @@ export default function App() {
     finally { setWorking(false) }
   }
 
-  const filtered = useMemo(() => orders.filter(order => {
-    if (page === 'approvals' && order.status !== 'pending') return false
-    if (filter !== 'all' && order.status !== filter) return false
-    if (period === '30' && new Date(order.createdAt).getTime() < Date.now() - 30 * 86400000) return false
-    const term = search.trim().toLowerCase()
-    return !term || [order.ref, order.client, order.phone, order.product].some(value => value.toLowerCase().includes(term))
-  }), [orders, search, page, filter, period])
-  const stats = { all: orders.filter(o => o.status !== 'draft').length, pending: orders.filter(o => o.status === 'pending').length, approved: orders.filter(o => o.status === 'approved').length }
+  const filtered = orders
   const menu: { page: Page; title: string; icon: IconName }[] = [
     { page: 'dashboard', title: 'الطلبات', icon: 'grid' },
     { page: 'new', title: 'طلب جديد', icon: 'plus' },
