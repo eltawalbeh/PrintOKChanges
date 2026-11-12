@@ -1,0 +1,67 @@
+{
+  "name": "printok-desktop",
+  "productName": "PrintOK Desktop",
+  "version": "0.1.0",
+  "description": "Offline-first Arabic print proof and client storage for Windows 10",
+  "private": true,
+  "main": "electron/main.cjs",
+  "author": "PrintOK",
+  "license": "UNLICENSED",
+  "scripts": {
+    "dev": "vite --host 127.0.0.1",
+    "start": "electron .",
+    "build": "vite build",
+    "package:win": "npm run build && electron-builder --win nsis portable --x64 --publish never",
+    "check": "node --check electron/main.cjs && node --check electron/preload.cjs"
+  },
+  "dependencies": {
+    "react": "^19.0.0",
+    "react-dom": "^19.0.0"
+  },
+  "devDependencies": {
+    "@vitejs/plugin-react": "^6.0.0",
+    "vite": "^8.0.5",
+    "electron": "45.3.1",
+    "electron-builder": "26.18.0"
+  },
+  "build": {
+    "appId": "com.printok.desktop",
+    "productName": "PrintOK Desktop",
+    "directories": {
+      "output": "release"
+    },
+    "files": [
+      "dist/**/*",
+      "electron/**/*",
+      "package.json"
+    ],
+    "asar": true,
+    "win": {
+      "target": [
+        {
+          "target": "nsis",
+          "arch": [
+            "x64"
+          ]
+        },
+        {
+          "target": "portable",
+          "arch": [
+            "x64"
+          ]
+        }
+      ],
+      "artifactName": "PrintOK-Desktop-${version}-${arch}-${ext}"
+    },
+    "nsis": {
+      "oneClick": false,
+      "allowToChangeInstallationDirectory": true,
+      "perMachine": false,
+      "artifactName": "PrintOK-Desktop-Setup-${version}.exe"
+    },
+    "portable": {
+      "artifactName": "PrintOK-Desktop-Portable-${version}.exe"
+    },
+    "publish": null
+  }
+}
