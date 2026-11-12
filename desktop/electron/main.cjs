@@ -1,5 +1,5 @@
 'use strict'
-const { app, BrowserWindow, ipcMain, dialog, shell } = require('electron')
+const { app, BrowserWindow, ipcMain, dialog, shell, safeStorage } = require('electron')
 const fs = require('node:fs')
 const fsp = fs.promises
 const path = require('node:path')
@@ -20,6 +20,7 @@ const now = () => new Date().toISOString()
 const newId = () => crypto.randomUUID()
 const hash = s => crypto.createHash('sha256').update(s).digest('hex')
 const dataDir = () => app.getPath('userData')
+const githubToken = () => { try { return config.githubTokenEncrypted && safeStorage.isEncryptionAvailable() ? safeStorage.decryptString(Buffer.from(config.githubTokenEncrypted,'base64')) : null } catch { return null } }
 const configFile = () => path.join(dataDir(), 'desktop-config.json')
 const dbPath = () => path.join(config.root, 'printok-db.json')
 const inside = (p, dir) => { const rel = path.relative(path.resolve(dir),path.resolve(p)); return rel === '' || (!rel.startsWith('..'+path.sep) && rel !== '..' && !path.isAbsolute(rel)) }
@@ -188,8 +189,10 @@ async function previewStored({orderId,version,kind='design'}) {
 }
 async function updateCheck() {
   try {
-    const response=await fetch(RELEASES,{headers:{'User-Agent':'PrintOK-Desktop','Accept':'application/vnd.github+json'},signal:AbortSignal.timeout(8000)})
-    if(!response.ok) throw new Error('GitHub returned '+response.status)
+    const headers={'User-Agent':'PrintOK-Desktop','Accept':'application/vnd.github+json'}
+    const token=githubToken();if(token)headers.Authorization='Bearer '+token
+    const response=await fetch(RELEASES,{headers,signal:AbortSignal.timeout(8000)})
+    if(!response.ok) throw new Error(response.status===404 ? 'المستودع خاص؛ أضف GitHub read-only token من الإعدادات' : 'GitHub returned '+response.status)
     const list=await response.json()
     const items=list.filter(r=>!r.draft && /^desktop-v\d+\.\d+\.\d+$/.test(r.tag_name))
     items.sort((a,b)=>compareVersion(b.tag_name.slice(9),a.tag_name.slice(9)))
@@ -241,7 +244,7 @@ function ipc() {
   ipcMain.handle('data:load',allow(async()=>{
     const db=await readData()
     const clientDirectories={};for(const o of db.orders) clientDirectories[normalPhone(o.phone)]=db.clientFolders[keyFor(o.phone)]||null
-    return {...db,clientDirectories,root:config.root,version:app.getVersion()}
+    return {...db,clientDirectories,root:config.root,version:app.getVersion(),githubTokenConfigured:Boolean(githubToken())}
   }))
   ipcMain.handle('file:choose',allow(async()=>{
     const r=await dialog.showOpenDialog(win,{title:'اختر ملف طباعة',properties:['openFile'],filters:[{name:'PDF and images',extensions:['pdf','png','jpg','jpeg']}]})
@@ -310,6 +313,21 @@ function ipc() {
     return folder
   }))
   ipcMain.handle('updates:check',allow(updateCheck))
+  ipcMain.handle('updates:setToken',allow(async({token})=>{
+    if(typeof token!=='string'||!/^github_pat_|^ghp_/.test(token.trim())) throw new Error('أدخل GitHub Personal Access Token صالحاً')
+    if(!safeStorage.isEncryptionAvailable()) throw new Error('تشفير بيانات الاعتماد غير متوفر على Windows')
+    const clean=token.trim()
+    const response=await fetch(RELEASES,{headers:{'User-Agent':'PrintOK-Desktop','Accept':'application/vnd.github+json','Authorization':'Bearer '+clean},signal:AbortSignal.timeout(8000)})
+    if(!response.ok) throw new Error('تعذر قراءة إصدارات GitHub: '+response.status+'، تحقق من صلاحية Contents: Read')
+    config.githubTokenEncrypted=safeStorage.encryptString(clean).toString('base64')
+    await atomic(configFile(),JSON.stringify(config,null,2))
+    return {configured:true}
+  }))
+  ipcMain.handle('updates:clearToken',allow(async()=>{
+    delete config.githubTokenEncrypted
+    await atomic(configFile(),JSON.stringify(config,null,2))
+    return true
+  }))
   ipcMain.handle('updates:open',allow(async({url})=>{
     const candidate=new URL(url)
     if(candidate.protocol!=='https:'||candidate.hostname!=='github.com'||!candidate.pathname.startsWith('/eltawalbeh/PrintOKChanges/releases/'))throw new Error('رابط تحديث غير موثوق')
