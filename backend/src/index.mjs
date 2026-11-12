@@ -54,10 +54,10 @@ async function getOrder(id) {
   const { rows } = await query("SELECT o.*,v.id AS version_id,v.file_name,v.file_type,v.file_size FROM printok_orders o LEFT JOIN printok_versions v ON v.order_id=o.id AND v.version_number=o.current_version WHERE o.id=$1", [id]);
   if (!rows.length) return null;
   const order = serializeOrder(rows[0]);
-  const versions = await query('SELECT id, version_number, status, file_name, file_type, file_size, review_note, review_decision_at, created_at FROM printok_versions WHERE order_id=$1 ORDER BY version_number DESC', [id]);
+  const versions = await query('SELECT id, version_number, status, file_name, file_type, file_size, review_note, review_decision_at, revision_file_name,revision_file_type,revision_file_size,created_at FROM printok_versions WHERE order_id=$1 ORDER BY version_number DESC', [id]);
   return { ...order, versions: versions.rows.map(v => ({
     id: v.id, number: v.version_number, status: v.status, fileName: v.file_name, fileType: v.file_type,
-    fileSize: v.file_size, note: v.review_note, date: v.created_at, decisionAt: v.review_decision_at
+    fileSize: v.file_size, note: v.review_note, date: v.created_at, decisionAt: v.review_decision_at, revisionFileName: v.revision_file_name, revisionFileType: v.revision_file_type, revisionFileSize: v.revision_file_size
   })) };
 }
 async function requireAuth(req) {
@@ -188,11 +188,21 @@ async function publicReview(reviewToken) {
   return rows[0] || null;
 }
 async function decide(reviewToken, req) {
-  const body = await req.json().catch(() => ({}));
-  const decision = body.decision;
-  const note = clean(body.note, 3000);
+  const isMultipart = (req.headers.get('content-type') || '').includes('multipart/form-data');
+  const payload = isMultipart ? await req.formData() : await req.json().catch(() => ({}));
+  const decision = isMultipart ? payload.get('decision') : payload.decision;
+  const note = clean(isMultipart ? payload.get('note') : payload.note, 3000);
+  const attachment = isMultipart ? payload.get('file') : null;
+  const hasFile = attachment instanceof File && attachment.size > 0;
   if (!['approved', 'changes'].includes(decision)) return failure('قرار مراجعة غير صالح', 422);
-  if (decision === 'changes' && !note) return failure('أضف ملاحظة التعديل المطلوبة', 422);
+  if (decision === 'approved' && hasFile) return failure('لا يمكن إرفاق ملف مع الموافقة', 422);
+  if (decision === 'changes' && !note && !hasFile) return failure('يجب كتابة ملاحظة أو إرفاق ملف واحد على الأقل', 422);
+  let stored;
+  if (hasFile) {
+    const current = await publicReview(reviewToken);
+    if (!current || current.status !== 'pending' || current.order_status !== 'pending') return failure('انتهت صلاحية المراجعة أو تم التعامل معها', 409);
+    stored = await saveFile(attachment, current.order_id, 'feedback-v' + current.version_number);
+  }
   const db = await pool.connect();
   try {
     await db.query('BEGIN');
@@ -200,16 +210,25 @@ async function decide(reviewToken, req) {
       "SELECT o.id AS order_id,o.current_version,o.status AS order_status,v.id AS version_id,v.version_number,v.status AS version_status FROM printok_versions v JOIN printok_orders o ON o.id=v.order_id WHERE v.review_token_hash=$1 AND v.review_expires_at>NOW() AND o.current_version=v.version_number FOR UPDATE OF o,v",
       [hexHash(reviewToken)]
     );
-    if (!rows.length) { await db.query('ROLLBACK'); return failure('رابط المراجعة غير صالح أو انتهت صلاحيته', 404); }
+    if (!rows.length || rows[0].order_status !== 'pending' || rows[0].version_status !== 'pending') {
+      await db.query('ROLLBACK');
+      if (stored) await deleteFile(stored.key);
+      return failure('رابط المراجعة منتهي أو تم اتخاذ قرار مسبق على هذه النسخة', 409);
+    }
     const r = rows[0];
-    if (r.order_status !== 'pending' || r.version_status !== 'pending') { await db.query('ROLLBACK'); return failure('تم اتخاذ قرار مسبق لهذه النسخة', 409); }
-    await db.query('UPDATE printok_versions SET status=$2,review_note=$3,review_decision_at=NOW() WHERE id=$1', [r.version_id, decision, note || null]);
-    await db.query('UPDATE printok_orders SET status=$2,updated_at=NOW() WHERE id=$1', [r.order_id, decision]);
-    await logEvent(db, r.order_id, r.version_id, decision === 'approved' ? 'version_approved' : 'changes_requested', { version: r.current_version, note });
+    await db.query(
+      'UPDATE printok_versions SET status=$2,review_note=$3,review_decision_at=NOW(),revision_file_key=$4,revision_file_name=$5,revision_file_type=$6,revision_file_size=$7 WHERE id=$1',
+      [r.version_id, decision, note || null, stored?.key || null, stored?.name || null, stored?.type || null, stored?.size || null]
+    );
+    await db.query('UPDATE printok_orders SET status=$2,updated_at=NOW() WHERE id=$1',[r.order_id,decision]);
+    await logEvent(db,r.order_id,r.version_id,decision==='approved'?'version_approved':'changes_requested',{version:r.current_version,note,referenceFile:stored?.name||null});
     await db.query('COMMIT');
-    return out({ status: decision, version: r.current_version });
-  } catch (e) { await db.query('ROLLBACK'); throw e; }
-  finally { db.release(); }
+    return out({status:decision,version:r.current_version,referenceFile:stored?.name||null});
+  } catch(error) {
+    await db.query('ROLLBACK');
+    if(stored) await deleteFile(stored.key);
+    throw error;
+  } finally { db.release(); }
 }
 
 async function handler(request) {
@@ -254,10 +273,142 @@ async function handler(request) {
     return out({ shopName: name });
   }
   if (method === 'GET' && path === '/orders') {
-    const { rows } = await query(
-      'SELECT o.*,v.id AS version_id,v.file_name,v.file_type,v.file_size FROM printok_orders o LEFT JOIN printok_versions v ON v.order_id=o.id AND v.version_number=o.current_version ORDER BY o.created_at DESC LIMIT 300'
+    const search = clean(u.searchParams.get('q'),160);
+    const onlyStatus = clean(u.searchParams.get('status'),30);
+    const days = Number(u.searchParams.get('days')) || 0;
+    const orderSort = u.searchParams.get('sort') === 'oldest' ? 'ASC' : 'DESC';
+    const requestedPage = Number(u.searchParams.get('page')) || 1;
+    const page = Math.max(1,Math.min(100000,Math.trunc(requestedPage)));
+    const limit = 50;
+    const conditions = [];
+    const params = [];
+    if (search) {
+      const digits = search.replace(/[٠-٩۰-۹]/g,c=>String('٠١٢٣٤٥٦٧٨٩'.indexOf(c)>=0?'٠١٢٣٤٥٦٧٨٩'.indexOf(c):'۰۱۲۳۴۵۶۷۸۹'.indexOf(c)));
+      params.push('%'+search.toLowerCase()+'%');
+      const termIndex = params.length;
+      params.push('%'+digits.replace(/\D/g,'')+'%');
+      const digitIndex = params.length;
+      conditions.push("(LOWER(o.client_name) LIKE $"+termIndex+" OR LOWER(o.product_name) LIKE $"+termIndex+" OR LOWER('PK-'||o.order_number::text) LIKE $"+termIndex+" OR LOWER(o.client_phone) LIKE $"+termIndex+(digits.replace(/\D/g,'') ? " OR regexp_replace(o.client_phone,'[^0-9]','','g') LIKE $"+digitIndex : "")+")");
+    }
+    if (['draft','pending','approved','changes'].includes(onlyStatus)) {params.push(onlyStatus);conditions.push('o.status=
+  if (method === 'POST' && path === '/orders') return createOrder(request);
+  if (method === 'GET' && path === '/events') {
+    const { rows } = await query("SELECT e.id,e.event_type,e.details,e.created_at,o.order_number,o.client_name FROM printok_events e LEFT JOIN printok_orders o ON o.id=e.order_id ORDER BY e.created_at DESC LIMIT 100");
+    return out({ events: rows.map(e => ({ id:e.id,type:e.event_type,details:e.details,date:e.created_at,ref:e.order_number ? 'PK-'+e.order_number : '',client:e.client_name })) });
+  }
+  const orderGet = path.match(/^\/orders\/([0-9a-f-]+)$/i);
+  if (method === 'GET' && orderGet && isUUID(orderGet[1])) {
+    const result = await getOrder(orderGet[1]);
+    return result ? out({ order: result }) : failure('الطلب غير موجود', 404);
+  }
+  const orderNewVer = path.match(/^\/orders\/([0-9a-f-]+)\/versions$/i);
+  if (method === 'POST' && orderNewVer && isUUID(orderNewVer[1])) return addVersion(request, orderNewVer[1]);
+  const reviewGet = path.match(/^\/orders\/([0-9a-f-]+)\/review-link$/i);
+  if (method === 'POST' && reviewGet && isUUID(reviewGet[1])) return reviewLink(reviewGet[1]);
+  const fileGet = path.match(/^\/orders\/([0-9a-f-]+)\/files\/([0-9a-f-]+)$/i);
+  if (method === 'GET' && fileGet && isUUID(fileGet[1]) && isUUID(fileGet[2])) {
+    const { rows } = await query('SELECT v.file_key,v.file_type FROM printok_versions v WHERE v.order_id=$1 AND v.id=$2', [fileGet[1], fileGet[2]]);
+    return rows.length ? out({ url: await fileUrl(rows[0].file_key), fileType: rows[0].file_type }) : failure('الملف غير موجود', 404);
+  }
+  const revisionFileGet = path.match(/^\/orders\/([0-9a-f-]+)\/revisions\/([0-9a-f-]+)\/file$/i);
+  if (method === 'GET' && revisionFileGet && isUUID(revisionFileGet[1]) && isUUID(revisionFileGet[2])) {
+    const {rows}=await query('SELECT revision_file_key,revision_file_type FROM printok_versions WHERE order_id=$1 AND id=$2 AND revision_file_key IS NOT NULL',[revisionFileGet[1],revisionFileGet[2]]);
+    return rows.length ? out({url:await fileUrl(rows[0].revision_file_key),fileType:rows[0].revision_file_type}) : failure('مرفق التعديل غير موجود',404);
+  }
+  return failure('المسار غير موجود', 404);
+}
+
+export default {
+  async fetch(request) {
+    try {
+      if (request.headers.has('content-length') && Number(request.headers.get('content-length')) > 22 * 1024 * 1024) return finish(failure('حجم الطلب أكبر من المسموح', 413));
+      return finish(await handler(request));
+    } catch (error) {
+      console.error('PrintOK API:', error);
+      return finish(failure(error.status ? error.message : 'حدث خطأ بالخادم، حاول مرة أخرى', error.status || 500));
+    }
+  }
+};
++params.length);}
+    if ([7,30,90,365].includes(days)) {params.push(days);conditions.push("o.created_at>=NOW()-($"+params.length+"::int*INTERVAL '1 day')");}
+    const where = conditions.length?' WHERE '+conditions.join(' AND '):'';
+    const summary = await query("SELECT count(*)::int AS all,count(*) FILTER(WHERE status='pending')::int AS pending,count(*) FILTER(WHERE status='approved')::int AS approved,count(*) FILTER(WHERE status='changes')::int AS changes,count(*) FILTER(WHERE status='draft')::int AS draft FROM printok_orders");
+    const totals = await query('SELECT count(*)::int AS total FROM printok_orders o'+where,params);
+    const offset = (page-1)*limit;
+    const selected = params.concat([limit,offset]);
+    const {rows} = await query(
+      'SELECT o.*,v.id AS version_id,v.file_name,v.file_type,v.file_size FROM printok_orders o LEFT JOIN printok_versions v ON v.order_id=o.id AND v.version_number=o.current_version'
+       +where+' ORDER BY o.created_at '+orderSort+',o.id DESC LIMIT 
+  if (method === 'POST' && path === '/orders') return createOrder(request);
+  if (method === 'GET' && path === '/events') {
+    const { rows } = await query("SELECT e.id,e.event_type,e.details,e.created_at,o.order_number,o.client_name FROM printok_events e LEFT JOIN printok_orders o ON o.id=e.order_id ORDER BY e.created_at DESC LIMIT 100");
+    return out({ events: rows.map(e => ({ id:e.id,type:e.event_type,details:e.details,date:e.created_at,ref:e.order_number ? 'PK-'+e.order_number : '',client:e.client_name })) });
+  }
+  const orderGet = path.match(/^\/orders\/([0-9a-f-]+)$/i);
+  if (method === 'GET' && orderGet && isUUID(orderGet[1])) {
+    const result = await getOrder(orderGet[1]);
+    return result ? out({ order: result }) : failure('الطلب غير موجود', 404);
+  }
+  const orderNewVer = path.match(/^\/orders\/([0-9a-f-]+)\/versions$/i);
+  if (method === 'POST' && orderNewVer && isUUID(orderNewVer[1])) return addVersion(request, orderNewVer[1]);
+  const reviewGet = path.match(/^\/orders\/([0-9a-f-]+)\/review-link$/i);
+  if (method === 'POST' && reviewGet && isUUID(reviewGet[1])) return reviewLink(reviewGet[1]);
+  const fileGet = path.match(/^\/orders\/([0-9a-f-]+)\/files\/([0-9a-f-]+)$/i);
+  if (method === 'GET' && fileGet && isUUID(fileGet[1]) && isUUID(fileGet[2])) {
+    const { rows } = await query('SELECT v.file_key,v.file_type FROM printok_versions v WHERE v.order_id=$1 AND v.id=$2', [fileGet[1], fileGet[2]]);
+    return rows.length ? out({ url: await fileUrl(rows[0].file_key), fileType: rows[0].file_type }) : failure('الملف غير موجود', 404);
+  }
+  return failure('المسار غير موجود', 404);
+}
+
+export default {
+  async fetch(request) {
+    try {
+      if (request.headers.has('content-length') && Number(request.headers.get('content-length')) > 22 * 1024 * 1024) return finish(failure('حجم الطلب أكبر من المسموح', 413));
+      return finish(await handler(request));
+    } catch (error) {
+      console.error('PrintOK API:', error);
+      return finish(failure(error.status ? error.message : 'حدث خطأ بالخادم، حاول مرة أخرى', error.status || 500));
+    }
+  }
+};
++(params.length+1)+' OFFSET 
+  if (method === 'POST' && path === '/orders') return createOrder(request);
+  if (method === 'GET' && path === '/events') {
+    const { rows } = await query("SELECT e.id,e.event_type,e.details,e.created_at,o.order_number,o.client_name FROM printok_events e LEFT JOIN printok_orders o ON o.id=e.order_id ORDER BY e.created_at DESC LIMIT 100");
+    return out({ events: rows.map(e => ({ id:e.id,type:e.event_type,details:e.details,date:e.created_at,ref:e.order_number ? 'PK-'+e.order_number : '',client:e.client_name })) });
+  }
+  const orderGet = path.match(/^\/orders\/([0-9a-f-]+)$/i);
+  if (method === 'GET' && orderGet && isUUID(orderGet[1])) {
+    const result = await getOrder(orderGet[1]);
+    return result ? out({ order: result }) : failure('الطلب غير موجود', 404);
+  }
+  const orderNewVer = path.match(/^\/orders\/([0-9a-f-]+)\/versions$/i);
+  if (method === 'POST' && orderNewVer && isUUID(orderNewVer[1])) return addVersion(request, orderNewVer[1]);
+  const reviewGet = path.match(/^\/orders\/([0-9a-f-]+)\/review-link$/i);
+  if (method === 'POST' && reviewGet && isUUID(reviewGet[1])) return reviewLink(reviewGet[1]);
+  const fileGet = path.match(/^\/orders\/([0-9a-f-]+)\/files\/([0-9a-f-]+)$/i);
+  if (method === 'GET' && fileGet && isUUID(fileGet[1]) && isUUID(fileGet[2])) {
+    const { rows } = await query('SELECT v.file_key,v.file_type FROM printok_versions v WHERE v.order_id=$1 AND v.id=$2', [fileGet[1], fileGet[2]]);
+    return rows.length ? out({ url: await fileUrl(rows[0].file_key), fileType: rows[0].file_type }) : failure('الملف غير موجود', 404);
+  }
+  return failure('المسار غير موجود', 404);
+}
+
+export default {
+  async fetch(request) {
+    try {
+      if (request.headers.has('content-length') && Number(request.headers.get('content-length')) > 22 * 1024 * 1024) return finish(failure('حجم الطلب أكبر من المسموح', 413));
+      return finish(await handler(request));
+    } catch (error) {
+      console.error('PrintOK API:', error);
+      return finish(failure(error.status ? error.message : 'حدث خطأ بالخادم، حاول مرة أخرى', error.status || 500));
+    }
+  }
+};
++(params.length+2),selected
     );
-    return out({ orders: rows.map(serializeOrder) });
+    return out({orders:rows.map(serializeOrder),stats:summary.rows[0],total:totals.rows[0].total,page,pageSize:limit});
   }
   if (method === 'POST' && path === '/orders') return createOrder(request);
   if (method === 'GET' && path === '/events') {
