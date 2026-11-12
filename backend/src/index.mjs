@@ -84,7 +84,7 @@ async function saveFile(file, orderId, versionNumber) {
   return { key, name: clean(file.name, 255), type: file.type, size: file.size };
 }
 async function deleteFile(key) { try { await s3.send(new DeleteObjectCommand({ Bucket: BUCKET, Key: key })); } catch (err) { console.error('Orphan file cleanup failed:', err.message); } }
-async function fileUrl(key) { return getSignedUrl(s3, new GetObjectCommand({ Bucket: BUCKET, Key: key }), { expiresIn: 300 }); }
+async function fileUrl(key, download = false) { return getSignedUrl(s3, new GetObjectCommand({ Bucket: BUCKET, Key: key, ResponseContentDisposition: download ? 'attachment' : 'inline' }), { expiresIn: 300 }); }
 async function logEvent(client, order, version, type, details = {}) {
   await client.query('INSERT INTO printok_events(order_id,version_id,event_type,details) VALUES($1,$2,$3,$4::jsonb)', [order, version, type, JSON.stringify(details)]);
 }
@@ -313,7 +313,7 @@ async function handler(request) {
   const revisionFileGet = path.match(/^\/orders\/([0-9a-f-]+)\/revisions\/([0-9a-f-]+)\/file$/i);
   if (method === 'GET' && revisionFileGet && isUUID(revisionFileGet[1]) && isUUID(revisionFileGet[2])) {
     const {rows}=await query('SELECT revision_file_key,revision_file_type FROM printok_versions WHERE order_id=$1 AND id=$2 AND revision_file_key IS NOT NULL',[revisionFileGet[1],revisionFileGet[2]]);
-    return rows.length ? out({url:await fileUrl(rows[0].revision_file_key),fileType:rows[0].revision_file_type}) : failure('مرفق التعديل غير موجود',404);
+    return rows.length ? out({url:await fileUrl(rows[0].revision_file_key,u.searchParams.get('download')==='1'),fileType:rows[0].revision_file_type}) : failure('مرفق التعديل غير موجود',404);
   }
   return failure('المسار غير موجود', 404);
 }
