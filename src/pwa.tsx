@@ -1,4 +1,5 @@
 import { useEffect, useState } from 'react'
+import { isTelegramMiniApp } from './telegram'
 
 type InstallEvent = Event & {
   prompt: () => Promise<void>
@@ -32,7 +33,7 @@ export default function PWAInstall() {
   const [busy, setBusy] = useState(false)
 
   useEffect(() => {
-    if (installed() || new URLSearchParams(location.search).has('review')) return
+    if (installed() || isTelegramMiniApp() || new URLSearchParams(location.search).has('review')) return
     if (sessionStorage.getItem('printok-install-dismissed') === '1') return
     const ua = navigator.userAgent
     const ios = /iPhone|iPad|iPod/i.test(ua) ||
