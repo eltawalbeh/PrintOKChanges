@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState, type FormEvent, type ReactNode } from 'react'
 import { api, getSession, setSession, type Activity, type Order, type Review, type Status, type Version } from './api'
+import { setTelegramBackHandler } from './telegram'
 
 type Page = 'dashboard' | 'new' | 'details' | 'approvals' | 'activity' | 'settings'
 type IconName = 'grid' | 'plus' | 'check' | 'history' | 'settings' | 'bell' | 'search' | 'upload' | 'arrow' | 'up' | 'menu' | 'close' | 'link' | 'file' | 'clock' | 'log-out' | 'shield' | 'eye' | 'filter' | 'calendar' | 'chevron' | 'refresh' | 'user' | 'phone' | 'download' | 'trash'
@@ -154,6 +155,23 @@ export default function App() {
   const [error, setError] = useState('')
   const [decision, setDecision] = useState<'approved' | 'changes' | null>(null)
   const [note, setNote] = useState('')
+
+  // Telegram's native back button follows internal PrintOK navigation.
+  // It never grants access: login remains protected by the existing Neon session.
+  useEffect(() => {
+    const handler = customerMode
+      ? ((decision === 'changes' || revisionSuccess) ? () => {
+          setDecision(null)
+          setRevisionSuccess(false)
+        } : null)
+      : (session && page !== 'dashboard' ? () => {
+          setPage('dashboard')
+          setMobileNav(false)
+          setProofUrl('')
+          setError('')
+        } : null)
+    return setTelegramBackHandler(handler)
+  }, [page, customerMode, session, decision, revisionSuccess])
 
   useEffect(() => { if (!toast) return; const id = setTimeout(() => setToast(''), 4500); return () => clearTimeout(id) }, [toast])
 
