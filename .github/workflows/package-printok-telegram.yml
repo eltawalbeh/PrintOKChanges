@@ -1,0 +1,84 @@
+name: Package PrintOK Telegram Mini App for Figma Make
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'src/telegram.ts'
+      - 'src/App.tsx'
+      - 'src/main.tsx'
+      - 'src/index.css'
+      - 'src/pwa.tsx'
+      - 'index.html'
+      - 'TELEGRAM_MINI_APP_SETUP.md'
+      - '.github/workflows/package-printok-telegram.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  telegram-bundle:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - name: Build verified Figma Make Telegram ZIP
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+          import zipfile
+
+          files = [
+              "index.html",
+              "src/main.tsx",
+              "src/App.tsx",
+              "src/index.css",
+              "src/pwa.tsx",
+              "src/telegram.ts",
+              "TELEGRAM_MINI_APP_SETUP.md",
+          ]
+          for item in files:
+              assert Path(item).is_file(), f"Missing required file: {item}"
+          assert 'telegram-web-app.js' in Path("index.html").read_text()
+          assert 'initializeTelegramMiniApp()' in Path("src/main.tsx").read_text()
+          assert 'setTelegramBackHandler' in Path("src/App.tsx").read_text()
+          assert 'isTelegramMiniApp()' in Path("src/pwa.tsx").read_text()
+          assert 'initDataUnsafe' not in Path("src/App.tsx").read_text()
+          assert not any(item.startswith(".github/") for item in files)
+          name = "PrintOK-Telegram-Mini-App-Changes.zip"
+          with zipfile.ZipFile(name, "w", zipfile.ZIP_DEFLATED, compresslevel=9) as z:
+              for item in files:
+                  z.write(item, arcname=item)
+          with zipfile.ZipFile(name) as z:
+              assert z.namelist() == files
+              assert z.testzip() is None
+              print(f"Verified {len(files)} original relative paths in {name}.")
+          PY
+      - name: Upload Telegram Mini App ZIP
+        uses: actions/upload-artifact@v4
+        with:
+          name: PrintOK-Telegram-Mini-App-Changes
+          path: PrintOK-Telegram-Mini-App-Changes.zip
+          if-no-files-found: error
+      - name: Publish Telegram Mini App ZIP to Changes repo
+        shell: bash
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add PrintOK-Telegram-Mini-App-Changes.zip
+          if git diff --cached --quiet; then
+            echo "Telegram ZIP unchanged"
+            exit 0
+          fi
+          git commit -m "Package PrintOK Telegram Mini App ZIP [skip ci]"
+          for attempt in 1 2 3 4 5; do
+            git fetch origin main
+            git rebase origin/main
+            if git push origin HEAD:main; then
+              exit 0
+            fi
+            sleep 2
+          done
+          echo "Failed to push Telegram ZIP after retries" >&2
+          exit 1
