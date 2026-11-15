@@ -458,3 +458,30 @@
 .printok-install-hint{font-size:12px;color:#4c6171;line-height:1.8;margin:12px 0 0}
 @media(min-width:900px){.printok-install{inset:auto 24px 24px auto}}
 @media(prefers-reduced-motion:reduce){.printok-install,.printok-install *{transition:none!important;animation:none!important}}
+
+/* Telegram Mini App shell (keeps the existing PrintOK brand and Neon auth). */
+html.printok-telegram,
+html.printok-telegram body {
+  overscroll-behavior-y: contain;
+  background: #f7f9fb;
+}
+html.printok-telegram .app-shell,
+html.printok-telegram .customer-shell,
+html.printok-telegram .auth-screen {
+  min-height: var(--tg-viewport-stable-height, 100dvh);
+}
+html.printok-telegram .workspace,
+html.printok-telegram .customer-main {
+  padding-bottom: max(20px, env(safe-area-inset-bottom, 0px));
+}
+html.printok-telegram .auth-screen {
+  padding-bottom: env(safe-area-inset-bottom, 0px);
+}
+@media (max-width: 700px) {
+  html.printok-telegram .workspace-top {
+    padding-top: max(5px, env(safe-area-inset-top, 0px));
+  }
+  html.printok-telegram .printok-install {
+    display: none !important;
+  }
+}
