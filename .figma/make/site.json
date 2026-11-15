@@ -1,0 +1,12 @@
+{
+  "title": "PrintOK",
+  "description": "PrintOK — إدارة طلبات الطباعة ومراجعة التصاميم والموافقات",
+  "language": "ar",
+  "icons": {
+    "icon": "/icons/icon-192.png"
+  },
+  "accessibility": {
+    "addBypassLinks": false,
+    "ignoreReducedMotion": true
+  }
+}

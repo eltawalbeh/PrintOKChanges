@@ -442,3 +442,19 @@
   .revision-success-card { margin-top:38px; margin-bottom:34px; }
 }
 @media(prefers-reduced-motion:reduce) { .live-indicator.live-syncing>span { animation:none; } }
+
+
+/* Installable PWA prompt; no private customer details are displayed. */
+.printok-install{position:fixed;z-index:10002;inset:auto 18px 18px auto;width:min(330px,calc(100vw - 36px));padding:17px 18px 16px;border:1px solid #dce6f5;border-radius:16px;background:#fff;color:#15232e;box-shadow:0 12px 44px #1c33552e;font-family:inherit}
+.printok-install-heading{display:flex;align-items:center;gap:12px;padding-left:16px}
+.printok-install-heading strong{font-weight:750;font-size:15px;display:block}
+.printok-install-heading small{color:#667b8b;font-size:12px;display:block;line-height:1.6;margin-top:3px}
+.printok-install-logo{width:40px;height:40px;flex-shrink:0;border-radius:11px;background:#2856f6;color:white;display:flex;align-items:center;justify-content:center;font-size:26px;font-weight:800}
+.printok-install-close{position:absolute;inset:7px auto auto 9px;background:transparent;border:0;color:#5b6b7c;font-size:23px;width:28px;height:28px;line-height:1;cursor:pointer}
+.printok-install-close:focus-visible,.printok-install-action:focus-visible{outline:3px solid #9fc0ff;outline-offset:3px}
+.printok-install-action{width:100%;height:42px;margin-top:14px;border:0;border-radius:10px;background:#2856f6;color:#fff;font-family:inherit;font-size:13px;font-weight:700;cursor:pointer}
+.printok-install-action:hover{background:#1c45d3}
+.printok-install-action:disabled{opacity:.65;cursor:wait}
+.printok-install-hint{font-size:12px;color:#4c6171;line-height:1.8;margin:12px 0 0}
+@media(min-width:900px){.printok-install{inset:auto 24px 24px auto}}
+@media(prefers-reduced-motion:reduce){.printok-install,.printok-install *{transition:none!important;animation:none!important}}
