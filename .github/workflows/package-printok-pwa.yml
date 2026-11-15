@@ -1,0 +1,86 @@
+name: Package PrintOK PWA for Figma Make
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'src/pwa.tsx'
+      - 'src/main.tsx'
+      - 'src/index.css'
+      - 'index.html'
+      - 'public/**'
+      - '.figma/make/site.json'
+      - 'PWA_SETUP.md'
+      - '.github/workflows/package-printok-pwa.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  package-pwa:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - name: Create path-preserving Figma Make ZIP
+        run: |
+          python3 - <<'PY'
+          import json, struct, zipfile
+          from pathlib import Path
+
+          files = [
+              "index.html", "src/main.tsx", "src/index.css", "src/pwa.tsx",
+              ".figma/make/site.json", "public/manifest.webmanifest", "public/sw.js",
+              "public/icons/apple-touch-icon.png", "public/icons/icon-192.png",
+              "public/icons/icon-512.png", "public/icons/icon-maskable-512.png",
+              "PWA_SETUP.md",
+          ]
+          for item in files:
+              assert Path(item).is_file(), f"Missing PWA file: {item}"
+          manifest = json.loads(Path("public/manifest.webmanifest").read_text(encoding="utf-8"))
+          assert manifest["display"] == "standalone"
+          assert manifest["name"].startswith("PrintOK")
+          for icon in manifest["icons"]:
+              assert Path("public", icon["src"]).is_file(), icon["src"]
+          for item in files:
+              if item.endswith(".png"):
+                  raw = Path(item).read_bytes()
+                  assert raw[:8] == bytes([137,80,78,71,13,10,26,10]), item
+                  w,h = struct.unpack(">II",raw[16:24])
+                  assert w==h and w in (180,192,512), (item,w,h)
+          with zipfile.ZipFile("PrintOK-PWA-Changes.zip","w",zipfile.ZIP_DEFLATED,compresslevel=8) as z:
+              for item in files:
+                  z.write(item,item)
+          with zipfile.ZipFile("PrintOK-PWA-Changes.zip") as z:
+              assert z.namelist()==files
+              assert z.testzip() is None
+              print(f"Verified {len(files)} relative paths in PWA ZIP.")
+          PY
+      - name: Upload portable PWA archive
+        uses: actions/upload-artifact@v4
+        with:
+          name: PrintOK-PWA-Changes
+          path: PrintOK-PWA-Changes.zip
+          if-no-files-found: error
+      - name: Commit PWA archive to Changes repository
+        shell: bash
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add PrintOK-PWA-Changes.zip
+          if git diff --cached --quiet; then
+            echo "ZIP unchanged"
+            exit 0
+          fi
+          git commit -m "Package PrintOK PWA delivery ZIP [skip ci]"
+          for attempt in 1 2 3 4 5; do
+            git fetch origin main
+            git rebase origin/main
+            if git push origin HEAD:main; then
+              exit 0
+            fi
+            sleep 2
+          done
+          echo "Could not publish ZIP to main" >&2
+          exit 1
