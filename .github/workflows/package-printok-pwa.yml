@@ -5,6 +5,7 @@ on:
     branches: [main]
     paths:
       - 'src/pwa.tsx'
+      - 'src/telegram.ts'
       - 'src/main.tsx'
       - 'src/index.css'
       - 'index.html'
@@ -30,7 +31,7 @@ jobs:
           from pathlib import Path
 
           files = [
-              "index.html", "src/main.tsx", "src/index.css", "src/pwa.tsx",
+              "index.html", "src/main.tsx", "src/index.css", "src/pwa.tsx", "src/telegram.ts",
               ".figma/make/site.json", "public/manifest.webmanifest", "public/sw.js",
               "public/icons/apple-touch-icon.png", "public/icons/icon-192.png",
               "public/icons/icon-512.png", "public/icons/icon-maskable-512.png",
